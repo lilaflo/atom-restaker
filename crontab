@@ -1,1 +1,1 @@
-*/15 * * * * /app/start.sh >> /app/cron.log 2>&1
+17 */6 * * * /app/run-restake.sh

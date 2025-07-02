@@ -19,6 +19,7 @@ RUN npm install -g pnpm@$PNPM_VERSION
 # Throw-away build stage to reduce size of final image
 FROM base AS build
 
+
 # Latest releases available at https://github.com/aptible/supercronic/releases
 ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.29/supercronic-linux-amd64 \
     SUPERCRONIC=supercronic-linux-amd64 \
@@ -28,26 +29,36 @@ ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.
 RUN apt-get update -qq && \
     apt-get  install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3 ca-certificates curl
 
+# Install supercronic
 RUN curl -fsSLO "$SUPERCRONIC_URL" \
     && echo "${SUPERCRONIC_SHA1SUM}  ${SUPERCRONIC}" | sha1sum -c - \
     && chmod +x "$SUPERCRONIC" \
     && mv "$SUPERCRONIC" /usr/local/bin/supercronic
-
+    
 # Install node modules
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-# Copy application code
-COPY . .
+# Copy TypeScript configuration
+COPY tsconfig.json ./
+
+# Copy source code
+COPY src/ ./src/
+
+# Build TypeScript to JavaScript
+RUN pnpm run build
 
 # Final stage for app image
 FROM base
 
-# You might need to change this depending on where your crontab is located
-COPY --from=build /usr/local/bin/supercronic /usr/local/bin/supercronic
-
 # Copy built application
-COPY --from=build /app /app
+COPY --from=build /usr/local/bin/supercronic /usr/local/bin/supercronic
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./
+COPY crontab ./
+COPY run-restake.sh ./
 
-RUN supercronic -test /app/crontab
-RUN cat /app/crontab && supercronic -test /app/crontab
+RUN chmod +x run-restake.sh && cat crontab && supercronic -test crontab
+
+CMD ["/usr/local/bin/supercronic", "/app/crontab"]

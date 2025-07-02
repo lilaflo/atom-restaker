@@ -2,9 +2,12 @@
   "name": "restake-bot",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/restake.js",
   "scripts": {
-    "start": "node restake.js"
+    "build": "tsc",
+    "start": "node dist/restake.js",
+    "dev": "ts-node src/restake.ts",
+    "type-check": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -13,9 +16,14 @@
   "dependencies": {
     "@cosmjs/proto-signing": "^0.33.1",
     "@cosmjs/stargate": "^0.33.1",
-    "dotenv": "^17.0.0"
+    "@types/node-fetch": "^2.6.12",
+    "dotenv": "^17.0.0",
+    "node-fetch": "^2.7.0"
   },
   "devDependencies": {
-    "@flydotio/dockerfile": "^0.7.10"
+    "@flydotio/dockerfile": "^0.7.10",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
   }
 }
