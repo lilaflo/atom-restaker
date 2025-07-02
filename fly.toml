@@ -1,0 +1,18 @@
+# fly.toml app configuration file generated for restake-bot on 2025-07-01T14:53:01+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'restake-bot'
+primary_region = 'mia'
+
+[build]
+
+[http_service]
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[processes]
+app = "/usr/local/bin/supercronic /app/crontab"
