@@ -51,7 +51,6 @@ export interface EnvironmentVariables {
   MNEMONIC: string;
   RPC_URL: string;
   DELEGATOR_ADDRESS: string;
-  REST_URL: string;
   DENOM: string;
   RESERVE: number;
   MIN_RESTAKE_AMOUNT: number;
@@ -66,7 +65,6 @@ export function validateEnvironmentVariables(): EnvironmentVariables {
     "MNEMONIC",
     "RPC_URL",
     "DELEGATOR_ADDRESS",
-    "REST_URL",
     "DENOM",
     "RESERVE",
     "MIN_RESTAKE_AMOUNT",
@@ -88,7 +86,6 @@ export function validateEnvironmentVariables(): EnvironmentVariables {
     MNEMONIC,
     RPC_URL,
     DELEGATOR_ADDRESS,
-    REST_URL,
     DENOM,
     RESERVE,
     MIN_RESTAKE_AMOUNT,
@@ -101,7 +98,6 @@ export function validateEnvironmentVariables(): EnvironmentVariables {
     !MNEMONIC ||
     !RPC_URL ||
     !DELEGATOR_ADDRESS ||
-    !REST_URL ||
     !DENOM ||
     !RESERVE ||
     !MIN_RESTAKE_AMOUNT ||
@@ -115,7 +111,6 @@ export function validateEnvironmentVariables(): EnvironmentVariables {
   return {
     MNEMONIC,
     RPC_URL,
-    REST_URL,
     DELEGATOR_ADDRESS,
     DENOM,
     RESERVE: parseInt(RESERVE, 10),

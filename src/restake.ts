@@ -29,7 +29,6 @@ const {
   MNEMONIC,
   RPC_URL,
   DELEGATOR_ADDRESS,
-  REST_URL,
   DENOM,
   RESERVE,
   MIN_RESTAKE_AMOUNT,
@@ -93,7 +92,6 @@ class RestakeBot {
   async getRewardAmount(validatorAddress: string): Promise<number> {
     // Multiple fallback LCD endpoints to avoid rate limiting
     const lcdEndpoints = [
-      REST_URL,
       "https://cosmoshub.lava.build",
       "https://api.cosmos.network",
       "https://lcd-cosmoshub.keplr.app",
@@ -257,6 +255,21 @@ class RestakeBot {
   ): Promise<ClaimResult[]> {
     console.log("📥 Claiming rewards sequentially...");
 
+    // Prüfe, ob Gesamtsumme der Rewards >= MIN_RESTAKE_AMOUNT ist
+    let totalReward = 0;
+    for (const delegation of delegations) {
+      const validator = delegation.delegation.validatorAddress;
+      const rewardAmount = await this.getRewardAmount(validator);
+      totalReward += rewardAmount;
+    }
+
+    if (totalReward < MIN_RESTAKE_AMOUNT) {
+      console.log(
+        `⏸️ Gesamt-Reward ${totalReward} uatom ist kleiner als 0.5 ATOM. Claiming übersprungen.`
+      );
+      return [];
+    }
+
     const results: ClaimResult[] = [];
     for (const delegation of delegations) {
       const validator = delegation.delegation.validatorAddress;
@@ -401,14 +414,16 @@ class RestakeBot {
       const atomBalance = await this.getBalance();
       const stakeAmount = atomBalance - RESERVE;
 
-      if (stakeAmount <= 0) {
-        console.log("❌ Not enough ATOM available for restaking.");
+      if (stakeAmount < MIN_RESTAKE_AMOUNT) {
+        console.log(
+          `⏸️ Available stake (${stakeAmount} uatom) is less than minimum restake amount. Skipping restake.`
+        );
         return;
       }
 
       if (stakeAmount < MIN_RESTAKE_AMOUNT) {
         console.log(
-          `⏸️ Stake amount ${stakeAmount} uatom is less than 0.5 ATOM. Operation cancelled.`
+          `⏸️ Stake amount ${stakeAmount} uatom is less than ${MIN_RESTAKE_AMOUNT} uatom. Operation cancelled.`
         );
         return;
       }
