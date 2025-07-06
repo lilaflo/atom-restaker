@@ -1,1 +1,1 @@
-17 */6 * * * /app/run-restake.sh
+*/22 * * * * /app/run-restake.sh

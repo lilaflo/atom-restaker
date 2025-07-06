@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { DirectSecp256k1HdWallet, AccountData } from "@cosmjs/proto-signing";
+import { sendDiscordNotification } from "./notify";
 import {
   assertIsDeliverTxSuccess,
   SigningStargateClient,
@@ -16,14 +17,23 @@ import {
 // Add Node.js fetch polyfill for older Node versions
 import fetch from "node-fetch";
 
-// Environment variable validation
-let env: ReturnType<typeof validateEnvironmentVariables>;
-try {
-  env = validateEnvironmentVariables();
-} catch (error) {
-  console.error("❌", error instanceof Error ? error.message : String(error));
-  process.exit(1);
+// German number formatting utility
+function formatNumberDE(value: number): string {
+  return new Intl.NumberFormat("de-DE").format(value);
 }
+
+// Environment variable validation
+const env = (() => {
+  try {
+    return validateEnvironmentVariables();
+  } catch (error) {
+    sendDiscordNotification(
+      "❌ Configuration error: " +
+        (error instanceof Error ? error.message : String(error))
+    );
+    process.exit(1);
+  }
+})();
 
 const {
   MNEMONIC,
@@ -36,6 +46,15 @@ const {
   GAS_PRICE,
   PREFIX,
 } = env;
+
+// LCD endpoints for reward fetching with fallback
+const LCD_ENDPOINTS = [
+  "https://cosmoshub.lava.build",
+  "https://api.cosmos.network",
+  "https://lcd-cosmoshub.keplr.app",
+  "https://rest.cosmos.directory/cosmoshub",
+  "https://cosmos-rest.publicnode.com",
+];
 
 class RestakeBot {
   private client: SigningStargateClient | null = null;
@@ -58,13 +77,13 @@ class RestakeBot {
       );
 
       if (this.account) {
-        console.log(`🚀 Connected to ${this.account.address}`);
+        sendDiscordNotification(`🚀 Connected to ${this.account.address}`);
       }
       return true;
     } catch (error) {
-      console.error(
-        "❌ Failed to initialize client:",
-        error instanceof Error ? error.message : String(error)
+      sendDiscordNotification(
+        "❌ Failed to initialize client: " +
+          (error instanceof Error ? error.message : String(error))
       );
       return false;
     }
@@ -81,83 +100,65 @@ class RestakeBot {
       ).queryClient.staking.delegatorDelegations(DELEGATOR_ADDRESS);
       return (delegations as DelegationsResponse).delegationResponses || [];
     } catch (error) {
-      console.error(
-        "❌ Failed to fetch delegations:",
-        error instanceof Error ? error.message : String(error)
+      sendDiscordNotification(
+        "❌ Failed to fetch delegations:" +
+          (error instanceof Error ? error.message : String(error))
       );
       return [];
     }
   }
 
-  async getRewardAmount(validatorAddress: string): Promise<number> {
-    // Multiple fallback LCD endpoints to avoid rate limiting
-    const lcdEndpoints = [
-      "https://cosmoshub.lava.build",
-      "https://api.cosmos.network",
-      "https://lcd-cosmoshub.keplr.app",
-      "https://rest.cosmos.directory/cosmoshub",
-      "https://cosmos-rest.publicnode.com",
-    ];
+  private async fetchWithTimeout(
+    url: string,
+    timeoutMs: number = 10000
+  ): Promise<any> {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Request timeout")), timeoutMs);
+    });
 
-    for (let i = 0; i < lcdEndpoints.length; i++) {
-      const baseUrl = lcdEndpoints[i]!;
-      const url = `${baseUrl.replace(
-        /\/$/,
-        ""
-      )}/cosmos/distribution/v1beta1/delegators/${DELEGATOR_ADDRESS}/rewards/${validatorAddress}`;
+    const fetchPromise = fetch(url, {
+      headers: {
+        "User-Agent": "RestakeBot/1.0",
+        Accept: "application/json",
+      },
+    });
+
+    return Promise.race([fetchPromise, timeoutPromise]);
+  }
+
+  async getRewardAmount(validatorAddress: string): Promise<number> {
+    const url = `/cosmos/distribution/v1beta1/delegators/${DELEGATOR_ADDRESS}/rewards/${validatorAddress}`;
+
+    // Try LCD endpoints first
+    for (let i = 0; i < LCD_ENDPOINTS.length; i++) {
+      const baseUrl = LCD_ENDPOINTS[i]!;
+      const fullUrl = `${baseUrl.replace(/\/$/, "")}${url}`;
 
       try {
-        console.log(`🔍 Trying to get rewards from: ${baseUrl}`);
-
-        // Use a simple timeout approach compatible with node-fetch v2
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error("Request timeout")), 10000);
-        });
-
-        const fetchPromise = fetch(url, {
-          headers: {
-            "User-Agent": "RestakeBot/1.0",
-            Accept: "application/json",
-          },
-        });
-
-        const response = (await Promise.race([
-          fetchPromise,
-          timeoutPromise,
-        ])) as any;
+        const response = await this.fetchWithTimeout(fullUrl);
 
         if (response.status === 403) {
-          console.log(
+          sendDiscordNotification(
             `⚠️ 403 Forbidden from ${baseUrl}, trying next endpoint...`
           );
-          // Add exponential backoff delay before trying the next endpoint
-          if (i < lcdEndpoints.length - 1) {
-            const delay = Math.min(1000 * Math.pow(2, i), 5000); // Max 5 seconds
-            console.log(`⏳ Waiting ${delay}ms before next attempt...`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-          continue;
+          continue; // Try next endpoint silently
         }
 
         if (!response.ok) {
-          console.log(
-            `⚠️ HTTP ${response.status} from ${baseUrl}, trying next endpoint...`
+          sendDiscordNotification(
+            `⚠️ ${response.status} from ${baseUrl}, trying next endpoint...`
           );
-          // Add exponential backoff delay before trying the next endpoint
-          if (i < lcdEndpoints.length - 1) {
-            const delay = Math.min(1000 * Math.pow(2, i), 5000); // Max 5 seconds
-            console.log(`⏳ Waiting ${delay}ms before next attempt...`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-          continue;
+          continue; // Try next endpoint silently
         }
 
         const data = (await response.json()) as {
           rewards?: { denom: string; amount: string }[];
         };
 
-        if (!data || !data.rewards) {
-          console.log(`ℹ️ No rewards data from ${baseUrl}`);
+        if (!data?.rewards) {
+          sendDiscordNotification(
+            `⚠️ No rewards data from ${baseUrl}, trying next endpoint...`
+          );
           continue;
         }
 
@@ -166,32 +167,23 @@ class RestakeBot {
           10
         );
 
-        const reward = isNaN(atomReward) ? 0 : atomReward;
-        console.log(
-          `✅ Successfully got rewards from ${baseUrl}: ${reward} uatom`
-        );
-        return reward;
+        return isNaN(atomReward) ? 0 : atomReward;
       } catch (error) {
-        if (error instanceof Error && error.message === "Request timeout") {
-          console.log(`⏰ Timeout from ${baseUrl}, trying next endpoint...`);
-        } else {
-          console.log(
-            `⚠️ Error from ${baseUrl}:`,
-            error instanceof Error ? error.message : String(error)
-          );
-        }
         // Add exponential backoff delay before trying the next endpoint
-        if (i < lcdEndpoints.length - 1) {
-          const delay = Math.min(1000 * Math.pow(2, i), 5000); // Max 5 seconds
-          console.log(`⏳ Waiting ${delay}ms before next attempt...`);
+        if (i < LCD_ENDPOINTS.length - 1) {
+          const delay = Math.min(1000 * Math.pow(2, i), 5000);
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
+        sendDiscordNotification(
+          `⚠️ Error from ${baseUrl}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
         continue;
       }
     }
 
-    // If all endpoints fail, try using the RPC client as fallback
-    console.log("🔄 All LCD endpoints failed, trying RPC client fallback...");
+    // Fallback to RPC client
     try {
       if (!this.client) {
         throw new Error("Client not initialized");
@@ -200,30 +192,26 @@ class RestakeBot {
       const rewards = await (
         this.client as any
       ).queryClient.distribution.delegationTotalRewards(DELEGATOR_ADDRESS);
+
       const validatorReward = rewards.rewards?.find(
         (r: any) => r.validatorAddress === validatorAddress
       );
 
-      if (validatorReward && validatorReward.reward) {
+      if (validatorReward?.reward) {
         const atomReward = parseInt(
           validatorReward.reward.find((r: any) => r.denom === DENOM)?.amount ||
             "0",
           10
         );
-        const reward = isNaN(atomReward) ? 0 : atomReward;
-        console.log(`✅ Successfully got rewards via RPC: ${reward} uatom`);
-        return reward;
+        return isNaN(atomReward) ? 0 : atomReward;
       }
     } catch (rpcError) {
-      console.log(
-        "⚠️ RPC fallback also failed:",
-        rpcError instanceof Error ? rpcError.message : String(rpcError)
+      sendDiscordNotification(
+        "⚠️ All reward fetching methods failed: " +
+          (rpcError instanceof Error ? rpcError.message : String(rpcError))
       );
     }
 
-    console.error(
-      `❌ Failed to get rewards for ${validatorAddress} from all endpoints`
-    );
     return 0;
   }
 
@@ -253,71 +241,96 @@ class RestakeBot {
   async claimAllRewards(
     delegations: DelegationResponse[]
   ): Promise<ClaimResult[]> {
-    console.log("📥 Claiming rewards sequentially...");
-
-    // Prüfe, ob Gesamtsumme der Rewards >= MIN_RESTAKE_AMOUNT ist
+    // Calculate total rewards first
     let totalReward = 0;
     for (const delegation of delegations) {
-      const validator = delegation.delegation.validatorAddress;
-      const rewardAmount = await this.getRewardAmount(validator);
+      const rewardAmount = await this.getRewardAmount(
+        delegation.delegation.validatorAddress
+      );
       totalReward += rewardAmount;
     }
 
-    if (totalReward < MIN_RESTAKE_AMOUNT) {
-      console.log(
-        `⏸️ Gesamt-Reward ${totalReward} uatom ist kleiner als 0.5 ATOM. Claiming übersprungen.`
+    if (totalReward < parseInt(MIN_RESTAKE_AMOUNT, 10)) {
+      sendDiscordNotification(
+        `⏸️ Total rewards (${formatNumberDE(
+          totalReward
+        )} uatom) below minimum threshold. Skipping claims.`
       );
       return [];
     }
 
+    sendDiscordNotification(
+      `📥 Claiming ${formatNumberDE(totalReward)} uatom in rewards...`
+    );
+
     const results: ClaimResult[] = [];
+
     for (const delegation of delegations) {
       const validator = delegation.delegation.validatorAddress;
       const rewardAmount = await this.getRewardAmount(validator);
 
-      if (rewardAmount < MIN_REWARD_AMOUNT) {
-        console.log(
-          `⏩ Skipping ${validator}: Reward (${rewardAmount} uatom) < 0.5 ATOM`
+      if (rewardAmount < parseInt(MIN_REWARD_AMOUNT, 10)) {
+        sendDiscordNotification(
+          `⏩ Skipping ${validator}: Individual reward ${formatNumberDE(
+            rewardAmount
+          )} uatom is below threshold (${formatNumberDE(
+            parseInt(MIN_REWARD_AMOUNT, 10)
+          )} uatom)`
         );
-        continue;
+        continue; // Skip claiming this validator
       }
 
-      console.log(
-        `🔄 Claiming rewards from ${validator} (${rewardAmount} uatom)...`
-      );
-
-      // Add a small delay between transactions to avoid sequence conflicts
+      // Add delay between transactions to avoid sequence conflicts
       if (results.length > 0) {
-        console.log("⏳ Waiting 2 seconds before next transaction...");
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
 
+      // Send notification before claiming
+      sendDiscordNotification(`⏳ Claiming reward from ${validator}...`);
       const result = await this.claimReward(validator);
+      // Always send claim result (raw)
+      sendDiscordNotification(
+        `🧾 Claim result from ${validator}: ${JSON.stringify(result)}`
+      );
+
       if (result.success) {
-        console.log(`✅ Successfully claimed rewards from ${validator}`);
+        sendDiscordNotification(
+          `✅ Claimed ${formatNumberDE(rewardAmount)} uatom from ${validator}`
+        );
       } else {
-        console.error(`⚠️ Error claiming from ${validator}:`, result.error);
-        // If we get a sequence mismatch, wait longer and try to refresh the client
+        sendDiscordNotification(
+          `⚠️ Failed to claim from ${validator}: ${result.error}`
+        );
+
+        // Handle sequence mismatch
         if (result.error?.includes("account sequence mismatch")) {
-          console.log("🔄 Sequence mismatch detected, refreshing client...");
+          sendDiscordNotification(
+            "🔄 Sequence mismatch detected, refreshing client..."
+          );
           await this.disconnect();
           await new Promise((resolve) => setTimeout(resolve, 5000));
           if (!(await this.initialize())) {
-            console.error(
+            sendDiscordNotification(
               "❌ Failed to reinitialize client after sequence mismatch"
             );
             break;
           }
         }
       }
+
       results.push(result);
     }
 
     const successful = results.filter((r) => r.success).length;
     const failed = results.filter((r) => !r.success).length;
-    console.log(
-      `📊 Rewards claiming completed: ${successful} successful, ${failed} failed`
-    );
+
+    if (failed > 0) {
+      sendDiscordNotification(
+        `📊 Claims completed: ${formatNumberDE(
+          successful
+        )} successful, ${formatNumberDE(failed)} failed`
+      );
+    }
 
     return results;
   }
@@ -335,28 +348,23 @@ class RestakeBot {
       );
       return isNaN(atomBalance) ? 0 : atomBalance;
     } catch (error) {
-      console.error(
-        "❌ Failed to get balance:",
-        error instanceof Error ? error.message : String(error)
+      sendDiscordNotification(
+        "❌ Failed to get balance:" +
+          (error instanceof Error ? error.message : String(error))
       );
       return 0;
     }
   }
 
-  findMinDelegation(
+  private findMinDelegation(
     delegations: DelegationResponse[]
   ): DelegationResponse | null {
     if (delegations.length === 0) return null;
 
-    return delegations.reduce(
-      (
-        min: DelegationResponse,
-        current: DelegationResponse
-      ): DelegationResponse => {
-        return BigInt(current.balance.amount) < BigInt(min.balance.amount)
-          ? current
-          : min;
-      }
+    return delegations.reduce((min, current) =>
+      BigInt(current.balance.amount) < BigInt(min.balance.amount)
+        ? current
+        : min
     );
   }
 
@@ -379,9 +387,9 @@ class RestakeBot {
       assertIsDeliverTxSuccess(delegateTx);
       return true;
     } catch (error) {
-      console.error(
-        "❌ Failed to delegate tokens:",
-        error instanceof Error ? error.message : String(error)
+      sendDiscordNotification(
+        "❌ Failed to delegate tokens:" +
+          (error instanceof Error ? error.message : String(error))
       );
       return false;
     }
@@ -399,91 +407,130 @@ class RestakeBot {
 
       const delegations = await this.getDelegations();
       if (delegations.length === 0) {
-        console.log("❌ Keine Delegationen gefunden.");
+        sendDiscordNotification("❌ No delegations found.");
         return;
       }
 
       const atomBalance = await this.getBalance();
-      console.log(`💰 Ungestakete ATOM: ${atomBalance} uatom`);
+      sendDiscordNotification(
+        `Available ATOM: ${formatNumberDE(atomBalance)} uatom`
+      );
 
+      // Calculate total rewards
       let totalRewards = 0;
-      for (const d of delegations) {
-        const val = d.delegation.validatorAddress;
-        const r = await this.getRewardAmount(val);
-        totalRewards += r;
+      for (const delegation of delegations) {
+        const reward = await this.getRewardAmount(
+          delegation.delegation.validatorAddress
+        );
+        totalRewards += reward;
       }
-      console.log(`📦 Gesamte Rewards: ${totalRewards} uatom`);
+      sendDiscordNotification(
+        `📦 Total rewards: ${formatNumberDE(totalRewards)} uatom`
+      );
 
       const totalAvailable = atomBalance + totalRewards;
-      console.log(`🔍 Gesamtverfügbar (Balance + Rewards): ${totalAvailable} uatom`);
+      sendDiscordNotification(
+        `🔍 Total available (balance + rewards): ${formatNumberDE(
+          totalAvailable
+        )} uatom`
+      );
 
-      if (totalAvailable <= RESERVE) {
-        console.log(`⏸️ Gesamtverfügbar ≤ Reserve (${RESERVE} uatom). Nichts zum Restaken.`);
+      if (totalAvailable <= parseInt(RESERVE, 10)) {
+        sendDiscordNotification(
+          `⏸️ Total available (${formatNumberDE(
+            totalAvailable
+          )} uatom) ≤ reserve (${formatNumberDE(
+            parseInt(RESERVE, 10)
+          )} uatom). Nothing to restake.`
+        );
         return;
       }
 
-      console.log("📥 Claiming aller Rewards vor dem Re-Stake …");
+      // Claim rewards
       await this.claimAllRewards(delegations);
 
-      // Rewards wurden geclaimt – neuen Kontostand abrufen
+      // Get updated balance and rewards after claiming
       const updatedBalance = await this.getBalance();
-      const stakeable = updatedBalance - RESERVE;
+      const updatedRewards = await this.getTotalRewards(delegations);
+      const totalAfterClaim = updatedBalance + updatedRewards;
+      sendDiscordNotification(`💰 Post-claim total (balance + rewards): ${formatNumberDE(totalAfterClaim)} uatom`);
+
+      const stakeable = totalAfterClaim - parseInt(RESERVE, 10);
 
       if (stakeable <= 0) {
-        console.log(`⏸️ Nach dem Claiming nicht genug ATOM zum Restaken (Balance: ${updatedBalance}).`);
+        sendDiscordNotification(
+          `⏸️ Insufficient balance for restaking after claims (${formatNumberDE(
+            updatedBalance
+          )} uatom).`
+        );
         return;
       }
 
+      // Find validator with minimum delegation
       const minDelegation = this.findMinDelegation(delegations);
       if (!minDelegation) {
-        console.error("❌ Kein Validator gefunden zum Restaken.");
+        sendDiscordNotification("❌ No validator found for restaking.");
         return;
       }
-      const targetVal = minDelegation.delegation.validatorAddress;
 
-      console.log(`📤 Delegating ${stakeable} uatom to ${targetVal}`);
-      const ok = await this.delegateTokens(targetVal, stakeable);
-      console.log(ok ? "✅ Restake erfolgreich" : "❌ Restake gescheitert");
+      const targetValidator = minDelegation.delegation.validatorAddress;
+      sendDiscordNotification(
+        `📤 Delegating ${formatNumberDE(stakeable)} uatom to ${targetValidator}`
+      );
+
+      const success = await this.delegateTokens(targetValidator, stakeable);
+      sendDiscordNotification(
+        success ? "✅ Restake successful" : "❌ Restake failed"
+      );
     } catch (error) {
-      console.error(
-        "❌ Error in main execution:",
-        error instanceof Error ? error.message : String(error)
+      sendDiscordNotification(
+        "❌ Error in main execution:" +
+          (error instanceof Error ? error.message : String(error))
       );
     } finally {
       await this.disconnect();
     }
   }
+
+  private async getTotalRewards(delegations: DelegationResponse[]): Promise<number> {
+    let total = 0;
+    for (const delegation of delegations) {
+      const reward = await this.getRewardAmount(delegation.delegation.validatorAddress);
+      total += reward;
+    }
+    return total;
+  }
 }
 
-// Main execution - only runs when called directly (not by supercronic)
+// Main execution function
 async function main(): Promise<void> {
-  console.log("🚀 Starting restake bot execution...");
+  sendDiscordNotification("🚀 Starting restake bot execution...");
   const bot = new RestakeBot();
   await bot.run();
-  console.log("✅ Restake bot execution completed");
+  sendDiscordNotification("✅ Restake bot execution completed");
   process.exit(0);
 }
 
-// Separate function for running the restake bot (called by supercronic)
+// Export function for external use (e.g., by supercronic)
 export async function runRestakeBot(): Promise<void> {
-  console.log("🚀 Starting restake bot execution...");
+  sendDiscordNotification("🚀 Starting restake bot execution...");
   const bot = new RestakeBot();
   await bot.run();
-  console.log("✅ Restake bot execution completed");
+  sendDiscordNotification("✅ Restake bot execution completed");
 }
 
-// Handle graceful shutdown
+// Graceful shutdown handlers
 process.on("SIGTERM", () => {
-  console.log("🛑 Received SIGTERM, shutting down gracefully...");
+  sendDiscordNotification("🛑 Received SIGTERM, shutting down gracefully...");
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
-  console.log("🛑 Received SIGINT, shutting down gracefully...");
+  sendDiscordNotification("🛑 Received SIGINT, shutting down gracefully...");
   process.exit(0);
 });
 
-// Handle unhandled promise rejections
+// Error handlers
 process.on(
   "unhandledRejection",
   (reason: unknown, promise: Promise<unknown>) => {
@@ -492,18 +539,16 @@ process.on(
   }
 );
 
-// Handle uncaught exceptions
 process.on("uncaughtException", (error: Error) => {
-  console.error("❌ Uncaught Exception:", error);
+  sendDiscordNotification(`❌ Uncaught Exception: ${error.message}`);
   process.exit(1);
 });
 
-// Only run main if this file is executed directly (not imported)
+// Only run main if this file is executed directly
 if (require.main === module) {
   main().catch((e: unknown) => {
-    console.error(
-      "❌ Fatal error:",
-      e instanceof Error ? e.message : String(e)
+    sendDiscordNotification(
+      "❌ Fatal error:" + (e instanceof Error ? e.message : String(e))
     );
     process.exit(1);
   });

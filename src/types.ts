@@ -1,14 +1,5 @@
 // Type definitions for the Restake Bot
 
-export interface Config {
-  readonly DENOM: string;
-  readonly RESERVE: number;
-  readonly MIN_RESTAKE_AMOUNT: number;
-  readonly MIN_REWARD_AMOUNT: number;
-  readonly GAS_PRICE: string;
-  readonly PREFIX: string;
-}
-
 export interface DelegationResponse {
   delegation: {
     delegatorAddress: string;
@@ -29,22 +20,10 @@ export interface DelegationsResponse {
   };
 }
 
-export interface RewardData {
-  rewards: Array<{
-    denom: string;
-    amount: string;
-  }>;
-}
-
 export interface ClaimResult {
   success: boolean;
   validator: string;
   error?: string;
-}
-
-export interface Balance {
-  denom: string;
-  amount: string;
 }
 
 export interface EnvironmentVariables {
@@ -52,9 +31,9 @@ export interface EnvironmentVariables {
   RPC_URL: string;
   DELEGATOR_ADDRESS: string;
   DENOM: string;
-  RESERVE: number;
-  MIN_RESTAKE_AMOUNT: number;
-  MIN_REWARD_AMOUNT: number;
+  RESERVE: string;
+  MIN_RESTAKE_AMOUNT: string;
+  MIN_REWARD_AMOUNT: string;
   GAS_PRICE: string;
   PREFIX: string;
 }
@@ -72,6 +51,7 @@ export function validateEnvironmentVariables(): EnvironmentVariables {
     "GAS_PRICE",
     "PREFIX",
   ] as const;
+
   const missingVars = requiredEnvVars.filter(
     (varName) => !process.env[varName]
   );
@@ -94,29 +74,16 @@ export function validateEnvironmentVariables(): EnvironmentVariables {
     PREFIX,
   } = process.env;
 
-  if (
-    !MNEMONIC ||
-    !RPC_URL ||
-    !DELEGATOR_ADDRESS ||
-    !DENOM ||
-    !RESERVE ||
-    !MIN_RESTAKE_AMOUNT ||
-    !MIN_REWARD_AMOUNT ||
-    !GAS_PRICE ||
-    !PREFIX
-  ) {
-    throw new Error("Environment variables are not properly set");
-  }
-
+  // TypeScript already ensures these are not null due to the filter above
   return {
-    MNEMONIC,
-    RPC_URL,
-    DELEGATOR_ADDRESS,
-    DENOM,
-    RESERVE: parseInt(RESERVE, 10),
-    MIN_RESTAKE_AMOUNT: parseInt(MIN_RESTAKE_AMOUNT, 10),
-    MIN_REWARD_AMOUNT: parseInt(MIN_REWARD_AMOUNT, 10),
-    GAS_PRICE,
-    PREFIX,
+    MNEMONIC: MNEMONIC!,
+    RPC_URL: RPC_URL!,
+    DELEGATOR_ADDRESS: DELEGATOR_ADDRESS!,
+    DENOM: DENOM!,
+    RESERVE: RESERVE!,
+    MIN_RESTAKE_AMOUNT: MIN_RESTAKE_AMOUNT!,
+    MIN_REWARD_AMOUNT: MIN_REWARD_AMOUNT!,
+    GAS_PRICE: GAS_PRICE!,
+    PREFIX: PREFIX!,
   };
 }
