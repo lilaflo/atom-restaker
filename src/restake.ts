@@ -395,58 +395,55 @@ class RestakeBot {
 
   async run(): Promise<void> {
     try {
-      // Initialize connection
-      if (!(await this.initialize())) {
-        return;
-      }
+      if (!(await this.initialize())) return;
 
-      // Get delegations
       const delegations = await this.getDelegations();
       if (delegations.length === 0) {
-        console.log("❌ No delegations found.");
+        console.log("❌ Keine Delegationen gefunden.");
         return;
       }
 
-      // Claim rewards
+      const atomBalance = await this.getBalance();
+      console.log(`💰 Ungestakete ATOM: ${atomBalance} uatom`);
+
+      let totalRewards = 0;
+      for (const d of delegations) {
+        const val = d.delegation.validatorAddress;
+        const r = await this.getRewardAmount(val);
+        totalRewards += r;
+      }
+      console.log(`📦 Gesamte Rewards: ${totalRewards} uatom`);
+
+      const totalAvailable = atomBalance + totalRewards;
+      console.log(`🔍 Gesamtverfügbar (Balance + Rewards): ${totalAvailable} uatom`);
+
+      if (totalAvailable <= RESERVE) {
+        console.log(`⏸️ Gesamtverfügbar ≤ Reserve (${RESERVE} uatom). Nichts zum Restaken.`);
+        return;
+      }
+
+      console.log("📥 Claiming aller Rewards vor dem Re-Stake …");
       await this.claimAllRewards(delegations);
 
-      // Check balance for restaking
-      const atomBalance = await this.getBalance();
-      const stakeAmount = atomBalance - RESERVE;
+      // Rewards wurden geclaimt – neuen Kontostand abrufen
+      const updatedBalance = await this.getBalance();
+      const stakeable = updatedBalance - RESERVE;
 
-      if (stakeAmount < MIN_RESTAKE_AMOUNT) {
-        console.log(
-          `⏸️ Available stake (${stakeAmount} uatom) is less than minimum restake amount. Skipping restake.`
-        );
+      if (stakeable <= 0) {
+        console.log(`⏸️ Nach dem Claiming nicht genug ATOM zum Restaken (Balance: ${updatedBalance}).`);
         return;
       }
 
-      if (stakeAmount < MIN_RESTAKE_AMOUNT) {
-        console.log(
-          `⏸️ Stake amount ${stakeAmount} uatom is less than ${MIN_RESTAKE_AMOUNT} uatom. Operation cancelled.`
-        );
-        return;
-      }
-
-      // Find validator with minimum delegation
       const minDelegation = this.findMinDelegation(delegations);
       if (!minDelegation) {
-        console.log("❌ No valid delegation found for restaking.");
+        console.error("❌ Kein Validator gefunden zum Restaken.");
         return;
       }
+      const targetVal = minDelegation.delegation.validatorAddress;
 
-      const targetValidator = minDelegation.delegation.validatorAddress;
-      console.log(
-        `📤 Delegating ${stakeAmount} uatom to validator ${targetValidator}`
-      );
-
-      // Delegate tokens
-      const success = await this.delegateTokens(targetValidator, stakeAmount);
-      if (success) {
-        console.log("✅ Successfully restaked.");
-      } else {
-        console.log("❌ Failed to restake.");
-      }
+      console.log(`📤 Delegating ${stakeable} uatom to ${targetVal}`);
+      const ok = await this.delegateTokens(targetVal, stakeable);
+      console.log(ok ? "✅ Restake erfolgreich" : "❌ Restake gescheitert");
     } catch (error) {
       console.error(
         "❌ Error in main execution:",
