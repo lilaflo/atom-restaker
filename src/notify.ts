@@ -1,5 +1,5 @@
 export const sendDiscordNotification = async (
-  message: string
+  content: string
 ): Promise<void> => {
   const webhookUrl = process.env["DISCORD_WEBHOOK_URL"];
   if (!webhookUrl) {
@@ -7,13 +7,11 @@ export const sendDiscordNotification = async (
     return;
   }
 
-  const timestamp = new Date().toLocaleString("de-DE");
-
   try {
     await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: `[${timestamp}]: ${message}` }),
+      body: JSON.stringify({ content }),
     });
     console.log("📣 Discord notification sent.");
   } catch (error) {
