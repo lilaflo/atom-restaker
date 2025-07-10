@@ -7,7 +7,7 @@ import {
   Validator,
   ValidatorAddress,
 } from "./types";
-import { SigningStargateClient } from "@cosmjs/stargate";
+import { GasPrice, SigningStargateClient } from "@cosmjs/stargate";
 import { fetchWithTimeout, returnFirst } from "./utils";
 
 const validatedConfig = RestakeConfigSchema.parse(Config);
@@ -37,7 +37,10 @@ async function main() {
   const client: SigningStargateClient =
     await SigningStargateClient.connectWithSigner(
       validatedConfig.RPC_URL,
-      wallet
+      wallet,
+      {
+        gasPrice: GasPrice.fromString(validatedConfig.GAS_PRICE),
+      }
     );
 
   // Get list of validators
@@ -104,7 +107,20 @@ async function main() {
     (validator) => validator.rewards > validatedConfig.MIN_REWARD_AMOUNT
   );
   console.debug(`Rewards to claim: ${rewardsToClaim.length}`);
-  console.debug(rewardsToClaim);
+
+  // Claim rewards
+  await Promise.allSettled(
+    rewardsToClaim.map(async (validator) => {
+      // Wait 1 second
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const tx = await client.withdrawRewards(
+        validator.delegatorAddress,
+        validator.validatorAddress,
+        "auto"
+      );
+      console.debug(`Claiming ${validator.delegatorAddress}`, tx);
+    })
+  );
 
   // Get total available (not staked) ATOMS - after rewards are claimed
   const totalAvailable = await Promise.all(
@@ -127,21 +143,23 @@ async function main() {
   const thresholdToStake =
     validatedConfig.MIN_RESTAKE_AMOUNT + validatedConfig.RESERVE;
 
-  if (totalAvailable > thresholdToStake) {
-    const amountToStake = totalAvailable - validatedConfig.RESERVE;
-    console.debug(
-      `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} to ${
-        lowestStakingValidator.validatorAddress
-      }`
-    );
-    // TODO: Restake to lowest staking validator
-  } else {
+  if (totalAvailable < thresholdToStake) {
     console.debug(
       `No restaking needed, total available is less than ${formatNumber(
         thresholdToStake
       )} ${validatedConfig.DENOM}`
     );
+    client.disconnect();
+    return;
   }
+
+  const amountToStake = totalAvailable - validatedConfig.RESERVE;
+  console.debug(
+    `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} to ${
+      lowestStakingValidator.validatorAddress
+    }`
+  );
+  // TODO: Restake to lowest staking validator
 
   client.disconnect();
 }
