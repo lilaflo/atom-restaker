@@ -1,4 +1,4 @@
-import { CosmosAddressSchema, RestakeConfigSchema } from "../src/types";
+import { CosmosAddressSchema, RestakeConfigSchema } from "./types";
 
 describe("Schema Validation Tests", () => {
   describe("Basic Validations", () => {
@@ -38,6 +38,8 @@ describe("Configuration Validation", () => {
       MIN_FACTOR: 1.5,
       CHAIN_ID: "cosmoshub-4",
       NOTIFICATION_COOLDOWN: 60000,
+      DISCORD_WEBHOOK_URL:
+        "https://discord.com/api/webhooks/1234567890/abcdefghijklmnopqrstuvwxyz",
     };
     const result = RestakeConfigSchema.parse(validConfig);
     expect(result).toBeDefined();

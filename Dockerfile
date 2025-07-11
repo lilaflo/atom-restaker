@@ -1,64 +1,44 @@
-# syntax = docker/dockerfile:1
+FROM node:22.17.0-slim AS base
+RUN npm install -g pnpm
 
-# Adjust NODE_VERSION as desired
-ARG NODE_VERSION=22.17.0
-FROM node:${NODE_VERSION}-slim AS base
+FROM base AS installer
 
 LABEL fly_launch_runtime="Node.js"
 
-# Node.js app lives here
+# Install supercronic for cron jobs
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y curl ca-certificates && \
+    curl -fsSLO https://github.com/aptible/supercronic/releases/download/v0.2.29/supercronic-linux-amd64 && \
+    echo "cd48d45c4b10f3f0bfdd3a57d054cd05ac96812b  supercronic-linux-amd64" | sha1sum -c - && \
+    chmod +x supercronic-linux-amd64 
+
+
+# Install dotenvx
+RUN curl -sfS https://dotenvx.sh/install.sh | sh
+
 WORKDIR /app
 
-# Set production environment
-ENV NODE_ENV="production"
+COPY src ./src
+COPY jest.config.js ./jest.config.js
+COPY package.json ./package.json
+COPY pnpm-lock.yaml ./pnpm-lock.yaml
+COPY tsconfig.json ./tsconfig.json
 
-# Install pnpm
-ARG PNPM_VERSION=10.12.4
-RUN npm install -g pnpm@$PNPM_VERSION
-
-# Throw-away build stage to reduce size of final image
-FROM base AS build
-
-
-# Latest releases available at https://github.com/aptible/supercronic/releases
-ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.29/supercronic-linux-amd64 \
-    SUPERCRONIC=supercronic-linux-amd64 \
-    SUPERCRONIC_SHA1SUM=cd48d45c4b10f3f0bfdd3a57d054cd05ac96812b
-
-# Install packages needed to build node modules
-RUN apt-get update -qq && \
-    apt-get  install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3 ca-certificates curl
-
-# Install supercronic
-RUN curl -fsSLO "$SUPERCRONIC_URL" \
-    && echo "${SUPERCRONIC_SHA1SUM}  ${SUPERCRONIC}" | sha1sum -c - \
-    && chmod +x "$SUPERCRONIC" \
-    && mv "$SUPERCRONIC" /usr/local/bin/supercronic
-    
-# Install node modules
-COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
+RUN pnpm test
+RUN pnpm build
 
-# Copy TypeScript configuration
-COPY tsconfig.json ./
+FROM base AS runner
 
-# Copy source code
-COPY src/ ./src/
+WORKDIR /app
 
-# Build TypeScript to JavaScript
-RUN pnpm run build
-
-# Final stage for app image
-FROM base
-
-# Copy built application
-COPY --from=build /usr/local/bin/supercronic /usr/local/bin/supercronic
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package.json ./
-COPY crontab ./
-COPY run-restake.sh ./
-
-RUN chmod +x run-restake.sh && cat crontab && supercronic -test crontab
+COPY --from=installer /usr/local/bin/dotenvx /usr/local/bin/dotenvx
+COPY --from=installer supercronic-linux-amd64  /usr/local/bin/supercronic
+COPY --from=installer /app/package.json ./package.json
+COPY --from=installer /app/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=installer /app/dist ./dist
+COPY crontab ./crontab
+COPY run-restake.sh ./run-restake.sh
+RUN pnpm install --prod
 
 CMD ["/usr/local/bin/supercronic", "/app/crontab"]

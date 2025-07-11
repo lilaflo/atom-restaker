@@ -151,30 +151,6 @@ const RewardSchema = z.object({
     .transform((val) => Number(val)),
 });
 
-// "rewards": [
-//     {
-//        "denom": "ibc/054892D6BB43AF8B93AAC28AA5FD7019D2C59A15DAFD6F45C1FA2BF9BDA22454",
-//        "amount": "0.000555065667904671"
-//     },
-//     {
-//        "denom": "ibc/6B8A3F5C2AD51CD6171FA41A7E8C35AD594AB69226438DB94450436EA57B3A89",
-//        "amount": "115.427430217834075176"
-//     },
-//     {
-//        "denom": "ibc/B05539B66B72E2739B986B86391E5D08F12B8D5D2C2A7F8F8CF9ADF674DFA231",
-//        "amount": "0.000794349285059238"
-//     },
-//     {
-//        "denom": "ibc/B38AAA0F7A3EC4D7C8E12DFA33FF93205FE7A42738A4B0590E2FF15BC60A612B",
-//        "amount": "4057496559.983738864627480508"
-//     },
-//     {
-//        "denom": "uatom",
-//        "amount": "112252.662238636105151856"
-//     }
-//  ]
-//
-
 export const RewardsResponseSchema = z.object({
   rewards: z.array(RewardSchema),
 });

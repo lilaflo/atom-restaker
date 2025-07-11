@@ -11,6 +11,7 @@ import { GasPrice, SigningStargateClient } from "@cosmjs/stargate";
 import { fetchWithTimeout, returnFirst } from "./utils";
 
 const validatedConfig = RestakeConfigSchema.parse(Config);
+let client: SigningStargateClient;
 
 if (!validatedConfig) {
   throw new Error("Invalid config");
@@ -30,18 +31,18 @@ async function main() {
   const accounts = (await wallet.getAccounts()).map(
     (account) => account.address
   );
+
   if (accounts.length === 0) {
     throw new Error("No accounts found");
   }
 
-  const client: SigningStargateClient =
-    await SigningStargateClient.connectWithSigner(
-      validatedConfig.RPC_URL,
-      wallet,
-      {
-        gasPrice: GasPrice.fromString(validatedConfig.GAS_PRICE),
-      }
-    );
+  client = await SigningStargateClient.connectWithSigner(
+    validatedConfig.RPC_URL,
+    wallet,
+    {
+      gasPrice: GasPrice.fromString(validatedConfig.GAS_PRICE),
+    }
+  );
 
   // Get list of validators
   const tmpValidators: Validator[] = [];
@@ -88,25 +89,33 @@ async function main() {
     })
   );
 
-  console.debug(`Found ${validators.length} validators`, validators);
+  if (validators.length === 0) {
+    throw new Error("No validators found");
+  }
 
-  // Sort validators by staking amount
-  validators.sort((a, b) => a.stakingAmount - b.stakingAmount);
+  console.debug(`Found ${validators.length} validators`);
 
   // Get the validator with the lowest staking amount
-  const lowestStakingValidator = validators[0];
+  const lowestStakingValidator = validators.sort(
+    (a, b) => a.stakingAmount - b.stakingAmount
+  )[0];
 
   if (!lowestStakingValidator) {
-    console.debug("No validators found");
-    client.disconnect();
-    return;
+    throw new Error("No validators found");
   }
 
   // Claim all rewards > MIN_REWARD_AMOUNT
   const rewardsToClaim = validators.filter(
     (validator) => validator.rewards > validatedConfig.MIN_REWARD_AMOUNT
   );
-  console.debug(`Rewards to claim: ${rewardsToClaim.length}`);
+
+  console.debug(
+    `Rewards to claim: ${formatNumber(
+      rewardsToClaim.reduce((acc, validator) => acc + validator.rewards, 0)
+    )} ${validatedConfig.DENOM} considering min reward amount of ${formatNumber(
+      validatedConfig.MIN_REWARD_AMOUNT
+    )} ${validatedConfig.DENOM}`
+  );
 
   // Claim rewards
   await Promise.allSettled(
@@ -144,13 +153,11 @@ async function main() {
     validatedConfig.MIN_RESTAKE_AMOUNT + validatedConfig.RESERVE;
 
   if (totalAvailable < thresholdToStake) {
-    console.debug(
+    throw new Error(
       `No restaking needed, total available is less than ${formatNumber(
         thresholdToStake
       )} ${validatedConfig.DENOM}`
     );
-    client.disconnect();
-    return;
   }
 
   const amountToStake = totalAvailable - validatedConfig.RESERVE;
@@ -178,4 +185,6 @@ async function getDelegations(client: SigningStargateClient, account: string) {
   return delegations.delegationResponses;
 }
 
-main();
+main()
+  .catch((message) => console.debug(message))
+  .finally(() => client && client.disconnect());

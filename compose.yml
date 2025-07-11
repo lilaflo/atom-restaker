@@ -1,6 +1,8 @@
 services:
   restaker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
     env_file:
       - .env
-

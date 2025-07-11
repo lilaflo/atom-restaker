@@ -3,18 +3,7 @@ cd /app
 echo "[Restake] $(date): running restake bot"
 
 # Run the restake bot with a 10-minute timeout
-timeout 600 node -e "
-const { runRestakeBot } = require('./dist/restake.js');
-runRestakeBot()
-  .then(() => {
-    console.log('✅ Restake bot completed successfully');
-    process.exit(0);
-  })
-  .catch(e => {
-    console.error('❌ Restake bot failed:', e);
-    process.exit(1);
-  });
-"
+timeout 600 node dist/index.js
 
 # Check the exit code
 EXIT_CODE=$?
