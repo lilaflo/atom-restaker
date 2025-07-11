@@ -32,6 +32,9 @@ FROM base AS runner
 
 WORKDIR /app
 
+# Clean up
+RUN rm -rf /opt/yarn /tmp/* 
+
 COPY --from=installer /usr/local/bin/dotenvx /usr/local/bin/dotenvx
 COPY --from=installer supercronic-linux-amd64  /usr/local/bin/supercronic
 COPY --from=installer /app/package.json ./package.json
