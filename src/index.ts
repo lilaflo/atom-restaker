@@ -7,7 +7,12 @@ import {
   Validator,
   ValidatorAddress,
 } from "./types";
-import { GasPrice, SigningStargateClient } from "@cosmjs/stargate";
+import {
+  assertIsDeliverTxSuccess,
+  DeliverTxResponse,
+  GasPrice,
+  SigningStargateClient,
+} from "@cosmjs/stargate";
 import { fetchWithTimeout, returnFirst } from "./utils";
 
 const validatedConfig = RestakeConfigSchema.parse(Config);
@@ -160,13 +165,22 @@ async function main() {
     );
   }
 
+  // TODO: Restake to lowest staking validator
   const amountToStake = totalAvailable - validatedConfig.RESERVE;
   console.debug(
     `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} to ${
       lowestStakingValidator.validatorAddress
     }`
   );
-  // TODO: Restake to lowest staking validator
+
+  const delegateTx: DeliverTxResponse = await client.delegateTokens(
+    lowestStakingValidator.delegatorAddress,
+    lowestStakingValidator.validatorAddress,
+    { amount: amountToStake.toString(), denom: validatedConfig.DENOM },
+    "auto"
+  );
+
+  assertIsDeliverTxSuccess(delegateTx);
 
   client.disconnect();
 }
