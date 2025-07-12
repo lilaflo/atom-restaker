@@ -1,4 +1,5 @@
 import { DirectSecp256k1HdWallet } from "@cosmjs/proto-signing";
+import { sendMessage } from "./DiscordNotifier";
 import { Config } from "./config";
 import {
   DelegationResponseSchema,
@@ -18,15 +19,16 @@ import { fetchWithTimeout, returnFirst } from "./utils";
 const validatedConfig = RestakeConfigSchema.parse(Config);
 let client: SigningStargateClient;
 
-if (!validatedConfig) {
-  throw new Error("Invalid config");
-}
-
 /**
  * 1. Claim rewards from delegators with rewards >= MIN_REWARD_AMOUNT
  * 2. If total balance - RESERVE > MIN_RESTAKE_AMOUNT, restake to validator with lowest staking amount
  */
 async function main() {
+  if (!validatedConfig) {
+    await sendMessage("Invalid config", "error");
+    throw new Error("Invalid config");
+  }
+
   const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
     validatedConfig.MNEMONIC,
     {
@@ -38,6 +40,7 @@ async function main() {
   );
 
   if (accounts.length === 0) {
+    await sendMessage("No accounts found", "error");
     throw new Error("No accounts found");
   }
 
@@ -95,10 +98,10 @@ async function main() {
   );
 
   if (validators.length === 0) {
-    throw new Error("No validators found");
+    const msg = "No validators found";
+    await sendMessage(msg, "warn");
+    throw new Error(msg);
   }
-
-  console.debug(`Found ${validators.length} validators`);
 
   // Get the validator with the lowest staking amount
   const lowestStakingValidator = validators.sort(
@@ -114,7 +117,7 @@ async function main() {
     (validator) => validator.rewards > validatedConfig.MIN_REWARD_AMOUNT
   );
 
-  console.debug(
+  await sendMessage(
     `Rewards to claim: ${formatNumber(
       rewardsToClaim.reduce((acc, validator) => acc + validator.rewards, 0)
     )} ${validatedConfig.DENOM} considering min reward amount of ${formatNumber(
@@ -127,12 +130,13 @@ async function main() {
     rewardsToClaim.map(async (validator) => {
       // Wait 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      const tx = await client.withdrawRewards(
+      // const tx =
+      await client.withdrawRewards(
         validator.delegatorAddress,
         validator.validatorAddress,
         "auto"
       );
-      console.debug(`Claiming ${validator.delegatorAddress}`, tx);
+      // console.debug(`Claiming ${validator.delegatorAddress}`, tx);
     })
   );
 
@@ -146,7 +150,7 @@ async function main() {
     return balances.reduce((acc, amount) => acc + amount, 0);
   });
 
-  console.debug(
+  await sendMessage(
     `Total available: ${formatNumber(totalAvailable)} ${
       validatedConfig.DENOM
     }. Reserve: ${formatNumber(validatedConfig.RESERVE)} ${
@@ -165,9 +169,8 @@ async function main() {
     );
   }
 
-  // TODO: Restake to lowest staking validator
   const amountToStake = totalAvailable - validatedConfig.RESERVE;
-  console.debug(
+  await sendMessage(
     `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} to ${
       lowestStakingValidator.validatorAddress
     }`
@@ -200,5 +203,5 @@ async function getDelegations(client: SigningStargateClient, account: string) {
 }
 
 main()
-  .catch((message) => console.debug(message))
+  .catch(async (message) => sendMessage(message))
   .finally(() => client && client.disconnect());
