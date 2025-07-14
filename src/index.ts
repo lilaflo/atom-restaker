@@ -117,12 +117,18 @@ async function main() {
     (validator) => validator.rewards > validatedConfig.MIN_REWARD_AMOUNT
   );
 
+  const rewardSum = rewardsToClaim.reduce(
+    (acc, validator) => acc + validator.rewards,
+    0
+  );
+
   await sendMessage(
-    `Rewards to claim: ${formatNumber(
-      rewardsToClaim.reduce((acc, validator) => acc + validator.rewards, 0)
-    )} ${validatedConfig.DENOM} considering min reward amount of ${formatNumber(
+    `Rewards to claim: ${formatNumber(rewardSum)} ${
+      validatedConfig.DENOM
+    } considering min reward amount of ${formatNumber(
       validatedConfig.MIN_REWARD_AMOUNT
-    )} ${validatedConfig.DENOM}`
+    )} ${validatedConfig.DENOM}`,
+    rewardSum > 0 ? "success" : "info"
   );
 
   // Claim rewards
@@ -136,7 +142,6 @@ async function main() {
         validator.validatorAddress,
         "auto"
       );
-      // console.debug(`Claiming ${validator.delegatorAddress}`, tx);
     })
   );
 
@@ -173,7 +178,8 @@ async function main() {
   await sendMessage(
     `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} to ${
       lowestStakingValidator.validatorAddress
-    }`
+    }`,
+    "success"
   );
 
   const delegateTx: DeliverTxResponse = await client.delegateTokens(
