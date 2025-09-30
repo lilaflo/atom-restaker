@@ -164,15 +164,41 @@ The bot races multiple LCD endpoints for fastest response:
 1. Create HD wallet from mnemonic
 2. Connect to Cosmos RPC with SigningStargateClient
 3. Query all delegations across accounts
-4. Race multiple LCD endpoints to fetch rewards
-5. Claim rewards from validators with rewards >= MIN_REWARD_AMOUNT
+4. Race multiple LCD endpoints to fetch rewards for each validator
+5. Fetch validator metadata (jailed status, bonding status, commission rate)
+6. Filter out inactive/jailed validators
+   └─ Skip validators where jailed=true OR status!="BOND_STATUS_BONDED"
+7. Claim rewards from validators with rewards >= MIN_REWARD_AMOUNT
    └─ 1 second delay between claims to avoid sequence conflicts
-6. Check total available balance
-7. If balance - RESERVE > MIN_RESTAKE_AMOUNT:
-   └─ Delegate to validator with LOWEST stake amount
-8. Return structured result
-9. Disconnect client
+8. Check total available balance
+9. If balance - RESERVE > MIN_RESTAKE_AMOUNT:
+   └─ Delegate to ACTIVE validator with LOWEST stake amount
+10. Return structured result
+11. Disconnect client
 ```
+
+### Validator Safety Features
+
+The bot automatically filters validators to ensure restaking safety:
+
+**Jailed Validators**: Validators that are jailed (penalized for misbehavior) are skipped
+- Jailed validators cannot participate in consensus
+- Delegating to jailed validators provides no rewards
+- The bot checks `validator.jailed === false`
+
+**Inactive Validators**: Only bonded (active) validators are considered
+- Checks `validator.status === "BOND_STATUS_BONDED"`
+- Skips validators with status "BOND_STATUS_UNBONDING" or "BOND_STATUS_UNBONDED"
+- Ensures your stake earns rewards
+
+**Validator Metadata**: The bot fetches and logs commission rates for monitoring
+- Commission rate is fetched but not currently used for filtering
+- You can monitor which validators you're delegating to via Discord notifications
+
+**Error Handling**: If validator metadata cannot be fetched
+- The validator is marked with `jailed=false` and `status=UNKNOWN`
+- It will be included in restaking (fail-open approach)
+- Warnings are logged to console
 
 ## 🧪 Testing
 

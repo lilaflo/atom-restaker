@@ -167,8 +167,31 @@ export const ValidatorSchema = z.object({
   delegatorAddress: CosmosAddressSchema,
   stakingAmount: z.number(),
   rewards: z.number(),
+  jailed: z.boolean().optional(),
+  status: z.string().optional(),
+  commission: z.number().optional(),
 });
 export type Validator = z.infer<typeof ValidatorSchema>;
 
 export const ValidatorsSchema = z.array(ValidatorSchema);
 export type Validators = z.infer<typeof ValidatorsSchema>;
+
+// Validator info response from LCD
+export const ValidatorInfoSchema = z.object({
+  validator: z.object({
+    operator_address: z.string(),
+    jailed: z.boolean(),
+    status: z.string(),
+    tokens: z.string(),
+    delegator_shares: z.string(),
+    description: z.object({
+      moniker: z.string(),
+    }).passthrough(),
+    commission: z.object({
+      commission_rates: z.object({
+        rate: z.string(),
+      }).passthrough(),
+    }).passthrough(),
+  }).passthrough(),
+});
+export type ValidatorInfo = z.infer<typeof ValidatorInfoSchema>;

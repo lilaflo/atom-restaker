@@ -7,6 +7,7 @@ import {
   RewardsResponseSchema,
   Validator,
   ValidatorAddress,
+  ValidatorInfoSchema,
 } from "./types";
 import {
   assertIsDeliverTxSuccess,
@@ -68,28 +69,56 @@ export async function executeRestake() {
     });
   });
 
-  // Enrich validators with rewards
+  // Enrich validators with rewards and metadata
   const validators: Validator[] = await Promise.all(
     tmpValidators.map(async (validator) => {
+      // Fetch rewards
       const rewardUrls = validatedConfig.LCD_ENDPOINTS.map(
         (endpoint) =>
           `${endpoint}/cosmos/distribution/v1beta1/delegators/${validator.delegatorAddress}/rewards/${validator.validatorAddress}`
       );
-      // Make a race condition with all rewardUrls. Reject non json responses.
       const rewards = await returnFirst(
         rewardUrls.map(async (url) => {
           const response = await fetchWithTimeout(url, 1000);
           return response.json();
         })
       );
-
       const validatedRewards = RewardsResponseSchema.parse(rewards);
+
+      // Fetch validator info (status, jailed, commission)
+      const validatorInfoUrls = validatedConfig.LCD_ENDPOINTS.map(
+        (endpoint) =>
+          `${endpoint}/cosmos/staking/v1beta1/validators/${validator.validatorAddress}`
+      );
+
+      let jailed = false;
+      let status = "UNKNOWN";
+      let commission = 0;
+
+      try {
+        const validatorInfoResponse = await returnFirst(
+          validatorInfoUrls.map(async (url) => {
+            const response = await fetchWithTimeout(url, 1000);
+            return response.json();
+          })
+        );
+        const validatorInfo = ValidatorInfoSchema.parse(validatorInfoResponse);
+        jailed = validatorInfo.validator.jailed;
+        status = validatorInfo.validator.status;
+        commission = Number(validatorInfo.validator.commission.commission_rates.rate);
+      } catch (error) {
+        // If we can't fetch validator info, log but continue
+        console.warn(`Failed to fetch validator info for ${validator.validatorAddress}:`, error);
+      }
 
       return {
         ...validator,
         rewards: validatedRewards.rewards
           .filter((reward) => reward.denom === validatedConfig.DENOM)
           .reduce((acc, reward) => acc + Number(reward.amount), 0),
+        jailed,
+        status,
+        commission,
       };
     })
   );
@@ -100,8 +129,29 @@ export async function executeRestake() {
     throw new Error(msg);
   }
 
-  // Get the validator with the lowest staking amount
-  const lowestStakingValidator = validators.reduce((min, v) =>
+  // Filter out jailed validators and inactive validators (status !== "BOND_STATUS_BONDED")
+  const activeValidators = validators.filter((v) => {
+    const isActive = !v.jailed && v.status === "BOND_STATUS_BONDED";
+    if (!isActive) {
+      console.log(
+        `Skipping validator ${v.validatorAddress}: jailed=${v.jailed}, status=${v.status}`
+      );
+    }
+    return isActive;
+  });
+
+  if (activeValidators.length === 0) {
+    const msg = `No active validators found. All ${validators.length} validator(s) are either jailed or inactive.`;
+    await sendMessage(msg, "error");
+    throw new Error(msg);
+  }
+
+  await sendMessage(
+    `Found ${activeValidators.length} active validator(s) out of ${validators.length} total delegations`
+  );
+
+  // Get the active validator with the lowest staking amount
+  const lowestStakingValidator = activeValidators.reduce((min, v) =>
     v.stakingAmount < min.stakingAmount ? v : min
   );
 
