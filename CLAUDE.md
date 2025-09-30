@@ -48,13 +48,13 @@ This is a Cosmos blockchain auto-restaking bot that automatically claims staking
 
 ## Architecture
 
+The codebase is organized into modular services for maintainability and testability:
+
 **Entry Point (src/index.ts):**
-- Exports `executeRestake()` function that can be called programmatically
-- Creates HD wallet from MNEMONIC
-- Connects to Cosmos RPC using SigningStargateClient
-- Fetches delegations → enriches with rewards and validator metadata → filters inactive/jailed → claims → restakes
+- Exports `executeRestake()` function that orchestrates the entire restaking workflow
+- Coordinates all service modules to execute the restaking process
 - Returns structured result object with success/failure status
-- All operations use the CosmJS Stargate client
+- Delegates business logic to specialized service modules
 
 **HTTP Server (src/server.ts):**
 - Fastify HTTP server listening on port 8080
@@ -74,14 +74,51 @@ This is a Cosmos blockchain auto-restaking bot that automatically claims staking
 - Custom address validation: CosmosAddressSchema, ValidatorAddressSchema
 - Type inference using `z.infer<>`
 
-**Utilities (src/utils.ts):**
+**Core Utilities (src/utils.ts):**
 - `fetchWithTimeout()` - Fetch with timeout for LCD endpoint requests
 - `fetchWithRetry()` - Exponential backoff retry logic
 - `returnFirst()` - Race multiple endpoints, return first successful response
 
+**Formatting Utilities (src/utils/formatting.ts):**
+- `formatNumber()` - Locale-aware number formatting with comma separators
+
 **Notifications (src/DiscordNotifier.ts):**
 - `sendMessage(message, type)` - Sends formatted Discord webhook messages
 - Types: info ℹ️, error ❌, warn ⚠️, success ✅
+
+### Service Modules (src/services/)
+
+**Wallet Service (walletService.ts):**
+- `createWallet()` - Creates HD wallet from mnemonic
+- `getAccounts()` - Extracts account addresses from wallet
+- `connectWithSigner()` - Connects to Cosmos RPC with signing capability
+
+**Delegation Service (delegationService.ts):**
+- `getDelegations()` - Fetches delegations for a single account
+- `parseDelegations()` - Parses raw delegation responses into Validator objects
+- `getAllDelegations()` - Fetches and parses delegations from multiple accounts
+
+**Rewards Service (rewardsService.ts):**
+- `fetchRewards()` - Fetches rewards for a specific validator delegation
+- `calculateRewardAmount()` - Calculates total reward amount for a denomination
+- `enrichValidatorsWithRewards()` - Adds reward information to validator objects
+
+**Validator Service (validatorService.ts):**
+- `fetchValidatorInfo()` - Fetches validator metadata (jailed, status, commission)
+- `enrichValidatorsWithMetadata()` - Adds metadata to validator objects
+- `filterActiveValidators()` - Filters out jailed and inactive validators
+- `findLowestStakingValidator()` - Finds validator with lowest staking amount
+
+**Claim Service (claimService.ts):**
+- `filterValidatorsWithRewards()` - Filters validators above reward threshold
+- `calculateTotalRewards()` - Sums rewards from multiple validators
+- `claimRewards()` - Claims rewards with configurable delay between claims
+
+**Balance Service (balanceService.ts):**
+- `getBalance()` - Fetches balance for a single account
+- `getTotalAvailableBalance()` - Sums balances across multiple accounts
+- `calculateStakingAmount()` - Calculates amount available for staking after reserve
+- `shouldRestake()` - Determines if balance is sufficient for restaking
 
 **Reward Fetching Strategy:**
 - Races multiple LCD endpoints (cosmos.network, lava.build, publicnode.com, etc.)
@@ -98,6 +135,35 @@ This is a Cosmos blockchain auto-restaking bot that automatically claims staking
 - 1 second delay between reward claims to avoid sequence conflicts
 - Logs and sends Discord notifications about filtered validators
 
+## Testing
+
+The project has comprehensive unit test coverage using Jest:
+
+**Test Coverage:**
+- 10 test suites with 106+ tests covering all major services
+- Mock-based testing for external dependencies (CosmJS, fetch, etc.)
+- Tests for edge cases, error handling, and business logic
+
+**Test Files:**
+- `src/services/delegationService.test.ts` - Delegation fetching and parsing
+- `src/services/rewardsService.test.ts` - Reward calculations and enrichment
+- `src/services/validatorService.test.ts` - Validator filtering and selection
+- `src/services/balanceService.test.ts` - Balance management logic
+- `src/services/claimService.test.ts` - Reward claiming logic
+- `src/DiscordNotifier.test.ts` - Discord notification formatting
+- `src/server.test.ts` - HTTP endpoint behavior
+- `src/utils/formatting.test.ts` - Number formatting
+- `src/utils.spec.ts` - Utility functions (fetch, retry, racing)
+- `src/validation.test.ts` - Zod schema validation
+
+**Running Tests:**
+```bash
+pnpm test              # Run all tests
+pnpm test:watch        # Watch mode for development
+pnpm test:coverage     # Generate coverage report
+pnpm type-check        # TypeScript type checking
+```
+
 ## Important Notes
 
 - TypeScript strict mode enabled with extensive compiler checks (noUncheckedIndexedAccess, exactOptionalPropertyTypes, etc.)
@@ -105,3 +171,5 @@ This is a Cosmos blockchain auto-restaking bot that automatically claims staking
 - Chain: cosmoshub-4 (Cosmos Hub mainnet)
 - Denom: uatom (micro-ATOM, 1 ATOM = 1,000,000 uatom)
 - Tests run during Docker build - build fails if tests fail
+- All business logic is split into testable service modules
+- Service functions are pure where possible for easier testing
