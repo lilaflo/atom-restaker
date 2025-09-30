@@ -2,18 +2,26 @@ export async function fetchWithTimeout(
   url: string,
   timeoutMs: number = 5000
 ): Promise<any> {
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("Request timeout")), timeoutMs);
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  const fetchPromise = fetch(url, {
-    headers: {
-      "User-Agent": "RestakeBot/1.0",
-      Accept: "application/json",
-    },
-  });
-
-  return Promise.race([fetchPromise, timeoutPromise]);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "RestakeBot/1.0",
+        Accept: "application/json",
+      },
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if ((error as Error).name === "AbortError") {
+      throw new Error("Request timeout");
+    }
+    throw error;
+  }
 }
 
 const RETRY_DELAYS = [1000, 2000, 3000, 4000, 5000];
@@ -35,10 +43,24 @@ export async function fetchWithRetry<T>(
 }
 
 export async function returnFirst<T>(promises: Promise<T>[]): Promise<T> {
-  const results = await Promise.allSettled(promises);
-  const firstSuccess = results.find((result) => result.status === "fulfilled");
-  if (!firstSuccess) {
+  if (promises.length === 0) {
     throw new Error("No successful results");
   }
-  return firstSuccess.value;
+
+  return new Promise((resolve, reject) => {
+    let rejectedCount = 0;
+    const errors: Error[] = [];
+
+    promises.forEach((promise) => {
+      promise
+        .then((value) => resolve(value))
+        .catch((error) => {
+          errors.push(error);
+          rejectedCount++;
+          if (rejectedCount === promises.length) {
+            reject(new Error("No successful results"));
+          }
+        });
+    });
+  });
 }

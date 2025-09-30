@@ -5,8 +5,10 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc --outDir dist",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "start": "node dist/server.js",
+    "start:once": "node dist/index.js",
+    "dev": "ts-node src/server.ts",
+    "dev:once": "ts-node src/index.ts",
     "type-check": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -21,7 +23,8 @@
   "dependencies": {
     "@cosmjs/proto-signing": "^0.33.1",
     "@cosmjs/stargate": "^0.33.1",
-    "@types/node-fetch": "^2.6.12",
+    "@types/node-fetch": "^2.6.13",
+    "fastify": "^5.6.1",
     "node-fetch": "^2.7.0",
     "pnpm": "10.12.4",
     "zod": "^3.25.76"
@@ -29,10 +32,10 @@
   "devDependencies": {
     "@flydotio/dockerfile": "^0.7.10",
     "@types/jest": "^30.0.0",
-    "@types/node": "^20.19.7",
-    "jest": "^30.0.4",
-    "ts-jest": "^29.4.0",
+    "@types/node": "^20.19.11",
+    "jest": "^30.0.5",
+    "ts-jest": "^29.4.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.2"
   }
 }

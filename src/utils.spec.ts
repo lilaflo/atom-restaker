@@ -31,19 +31,20 @@ describe("utils", () => {
 
       const result = await fetchWithTimeout("https://api.example.com", 5000);
 
-      expect(fetch).toHaveBeenCalledWith("https://api.example.com", {
+      expect(fetch).toHaveBeenCalledWith("https://api.example.com", expect.objectContaining({
         headers: {
           "User-Agent": "RestakeBot/1.0",
           Accept: "application/json",
         },
-      });
+        signal: expect.any(AbortSignal),
+      }));
       expect(result).toBe(mockResponse);
     });
 
     test("should throw timeout error when request takes too long", async () => {
-      (fetch as jest.Mock).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 10000))
-      );
+      const abortError = new Error("AbortError");
+      abortError.name = "AbortError";
+      (fetch as jest.Mock).mockRejectedValue(abortError);
 
       const promise = fetchWithTimeout("https://api.example.com", 5000);
 
@@ -61,12 +62,13 @@ describe("utils", () => {
 
       await fetchWithTimeout("https://api.example.com");
 
-      expect(fetch).toHaveBeenCalledWith("https://api.example.com", {
+      expect(fetch).toHaveBeenCalledWith("https://api.example.com", expect.objectContaining({
         headers: {
           "User-Agent": "RestakeBot/1.0",
           Accept: "application/json",
         },
-      });
+        signal: expect.any(AbortSignal),
+      }));
     });
 
     test("should handle fetch errors", async () => {

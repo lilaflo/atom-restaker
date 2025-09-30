@@ -19,7 +19,7 @@ export const Config: RestakeConfig = {
   MIN_FACTOR: 5,
   CHAIN_ID: "cosmoshub-4",
   DENOM: "uatom",
-  RESERVE: 1_000_000,
+  RESERVE: 300_000,
   MIN_RESTAKE_AMOUNT: 800_000,
   MIN_REWARD_AMOUNT: 200_000,
   GAS_PRICE: "0.025uatom",

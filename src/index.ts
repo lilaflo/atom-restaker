@@ -17,34 +17,31 @@ import {
 import { fetchWithTimeout, returnFirst } from "./utils";
 
 const validatedConfig = RestakeConfigSchema.parse(Config);
-let client: SigningStargateClient;
 
 /**
  * 1. Claim rewards from delegators with rewards >= MIN_REWARD_AMOUNT
  * 2. If total balance - RESERVE > MIN_RESTAKE_AMOUNT, restake to validator with lowest staking amount
  */
-async function main() {
-  if (!validatedConfig) {
-    await sendMessage("Invalid config", "error");
-    throw new Error("Invalid config");
-  }
+export async function executeRestake() {
+  let client: SigningStargateClient | undefined;
 
-  const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
-    validatedConfig.MNEMONIC,
-    {
-      prefix: validatedConfig.PREFIX,
+  try {
+    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(
+      validatedConfig.MNEMONIC,
+      {
+        prefix: validatedConfig.PREFIX,
+      }
+    );
+    const accounts = (await wallet.getAccounts()).map(
+      (account) => account.address
+    );
+
+    if (accounts.length === 0) {
+      await sendMessage("No accounts found", "error");
+      throw new Error("No accounts found");
     }
-  );
-  const accounts = (await wallet.getAccounts()).map(
-    (account) => account.address
-  );
 
-  if (accounts.length === 0) {
-    await sendMessage("No accounts found", "error");
-    throw new Error("No accounts found");
-  }
-
-  client = await SigningStargateClient.connectWithSigner(
+    client = await SigningStargateClient.connectWithSigner(
     validatedConfig.RPC_URL,
     wallet,
     {
@@ -55,7 +52,7 @@ async function main() {
   // Get list of validators
   const tmpValidators: Validator[] = [];
   await Promise.all(
-    accounts.map(async (account) => await getDelegations(client, account))
+    accounts.map((account) => getDelegations(client!, account))
   ).then((delegationsRaw) => {
     delegationsRaw.flat().forEach((delegation) => {
       const { success, data } = DelegationResponseSchema.safeParse(delegation);
@@ -104,13 +101,9 @@ async function main() {
   }
 
   // Get the validator with the lowest staking amount
-  const lowestStakingValidator = validators.sort(
-    (a, b) => a.stakingAmount - b.stakingAmount
-  )[0];
-
-  if (!lowestStakingValidator) {
-    throw new Error("No validators found");
-  }
+  const lowestStakingValidator = validators.reduce((min, v) =>
+    v.stakingAmount < min.stakingAmount ? v : min
+  );
 
   // Claim all rewards > MIN_REWARD_AMOUNT
   const rewardsToClaim = validators.filter(
@@ -137,7 +130,7 @@ async function main() {
       // Wait 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
       // const tx =
-      await client.withdrawRewards(
+      await client!.withdrawRewards(
         validator.delegatorAddress,
         validator.validatorAddress,
         "auto"
@@ -146,14 +139,13 @@ async function main() {
   );
 
   // Get total available (not staked) ATOMS - after rewards are claimed
-  const totalAvailable = await Promise.all(
+  const balances = await Promise.all(
     accounts.map(async (account) => {
-      const balance = await client.getBalance(account, validatedConfig.DENOM);
+      const balance = await client!.getBalance(account, validatedConfig.DENOM);
       return Number(balance.amount);
     })
-  ).then((balances) => {
-    return balances.reduce((acc, amount) => acc + amount, 0);
-  });
+  );
+  const totalAvailable = balances.reduce((acc, amount) => acc + amount, 0);
 
   await sendMessage(
     `Total available: ${formatNumber(totalAvailable)} ${
@@ -191,7 +183,25 @@ async function main() {
 
   assertIsDeliverTxSuccess(delegateTx);
 
-  client.disconnect();
+    return {
+      success: true,
+      rewardsClaimed: rewardSum,
+      amountRestaked: amountToStake,
+      validator: lowestStakingValidator.validatorAddress,
+      totalAvailable,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await sendMessage(message, "error").catch(console.error);
+    return {
+      success: false,
+      error: message,
+    };
+  } finally {
+    if (client) {
+      client.disconnect();
+    }
+  }
 }
 
 function formatNumber(number: number) {
@@ -208,6 +218,21 @@ async function getDelegations(client: SigningStargateClient, account: string) {
   return delegations.delegationResponses;
 }
 
-main()
-  .catch(async (message) => sendMessage(message))
-  .finally(() => client && client.disconnect());
+// Only run if this file is executed directly
+if (require.main === module) {
+  executeRestake()
+    .then((result) => {
+      if (result.success) {
+        console.log("Restake bot completed successfully");
+        process.exit(0);
+      } else {
+        console.error("Restake bot failed:", result.error);
+        process.exit(1);
+      }
+    })
+    .catch(async (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Restake bot failed:", message);
+      process.exit(1);
+    });
+}
