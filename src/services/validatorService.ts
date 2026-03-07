@@ -1,5 +1,5 @@
 import { Validator, ValidatorInfoSchema } from "../types";
-import { fetchWithTimeout, returnFirst } from "../utils";
+import { queryLcd } from "../utils";
 
 /**
  * Fetches validator metadata (jailed status, bonding status, commission)
@@ -12,18 +12,9 @@ export async function fetchValidatorInfo(
   status: string;
   commission: number;
 }> {
-  const validatorInfoUrls = lcdEndpoints.map(
-    (endpoint) =>
-      `${endpoint}/cosmos/staking/v1beta1/validators/${validatorAddress}`
-  );
-
   try {
-    const validatorInfoResponse = await returnFirst(
-      validatorInfoUrls.map(async (url) => {
-        const response = await fetchWithTimeout(url, 1000);
-        return response.json();
-      })
-    );
+    const path = `/cosmos/staking/v1beta1/validators/${validatorAddress}`;
+    const validatorInfoResponse = await queryLcd(lcdEndpoints, path);
 
     const validatorInfo = ValidatorInfoSchema.parse(validatorInfoResponse);
     return {
@@ -68,7 +59,7 @@ export function filterActiveValidators(validators: Validator[]): Validator[] {
   return validators.filter((v) => {
     const isActive = !v.jailed && v.status === "BOND_STATUS_BONDED";
     if (!isActive) {
-      console.log(
+      console.debug(
         `Skipping validator ${v.validatorAddress}: jailed=${v.jailed}, status=${v.status}`
       );
     }
@@ -76,15 +67,3 @@ export function filterActiveValidators(validators: Validator[]): Validator[] {
   });
 }
 
-/**
- * Finds the validator with the lowest staking amount
- */
-export function findLowestStakingValidator(validators: Validator[]): Validator {
-  if (validators.length === 0) {
-    throw new Error("No validators provided");
-  }
-
-  return validators.reduce((min, v) =>
-    v.stakingAmount < min.stakingAmount ? v : min
-  );
-}

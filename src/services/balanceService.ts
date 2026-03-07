@@ -13,20 +13,6 @@ export async function getBalance(
 }
 
 /**
- * Fetches total available balance across multiple accounts
- */
-export async function getTotalAvailableBalance(
-  client: SigningStargateClient,
-  accounts: string[],
-  denom: string
-): Promise<number> {
-  const balances = await Promise.all(
-    accounts.map(async (account) => getBalance(client, account, denom))
-  );
-  return balances.reduce((acc, amount) => acc + amount, 0);
-}
-
-/**
  * Calculates the amount available for staking after reserve
  */
 export function calculateStakingAmount(

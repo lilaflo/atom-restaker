@@ -74,18 +74,11 @@ describe("rewardsService", () => {
     });
 
     test("should enrich validators with reward information", async () => {
-      const mockResponse = {
-        json: jest.fn().mockResolvedValue({
-          rewards: [{ denom: "uatom", amount: "5000" }],
-        }),
+      const mockRewardsResponse = {
+        rewards: [{ denom: "uatom", amount: "5000" }],
       };
 
-      (utils.fetchWithTimeout as jest.Mock).mockResolvedValue(mockResponse);
-      (utils.returnFirst as jest.Mock).mockImplementation(() =>
-        Promise.resolve({
-          rewards: [{ denom: "uatom", amount: "5000" }],
-        })
-      );
+      (utils.queryLcd as jest.Mock).mockResolvedValue(mockRewardsResponse);
 
       const result = await enrichValidatorsWithRewards(
         mockValidators,
@@ -95,10 +88,14 @@ describe("rewardsService", () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]!.rewards).toBe(5000);
+      expect(utils.queryLcd).toHaveBeenCalledWith(
+        lcdEndpoints,
+        expect.stringContaining("/rewards/")
+      );
     });
 
     test("should handle fetch errors gracefully", async () => {
-      (utils.returnFirst as jest.Mock).mockRejectedValue(
+      (utils.queryLcd as jest.Mock).mockRejectedValue(
         new Error("Network error")
       );
 
@@ -130,7 +127,7 @@ describe("rewardsService", () => {
         },
       ];
 
-      (utils.returnFirst as jest.Mock)
+      (utils.queryLcd as jest.Mock)
         .mockResolvedValueOnce({
           rewards: [{ denom: "uatom", amount: "3000" }],
         })

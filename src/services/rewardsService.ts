@@ -1,5 +1,5 @@
 import { RewardsResponseSchema, Validator } from "../types";
-import { fetchWithTimeout, returnFirst } from "../utils";
+import { queryLcd } from "../utils";
 
 /**
  * Fetches rewards for a specific validator delegation
@@ -9,17 +9,8 @@ export async function fetchRewards(
   delegatorAddress: string,
   validatorAddress: string
 ): Promise<any> {
-  const rewardUrls = lcdEndpoints.map(
-    (endpoint) =>
-      `${endpoint}/cosmos/distribution/v1beta1/delegators/${delegatorAddress}/rewards/${validatorAddress}`
-  );
-
-  const rewards = await returnFirst(
-    rewardUrls.map(async (url) => {
-      const response = await fetchWithTimeout(url, 1000);
-      return response.json();
-    })
-  );
+  const path = `/cosmos/distribution/v1beta1/delegators/${delegatorAddress}/rewards/${validatorAddress}`;
+  const rewards = await queryLcd(lcdEndpoints, path);
 
   return RewardsResponseSchema.parse(rewards);
 }
@@ -48,18 +39,8 @@ export async function enrichValidatorsWithRewards(
   return Promise.all(
     validators.map(async (validator) => {
       try {
-        const rewardUrls = lcdEndpoints.map(
-          (endpoint) =>
-            `${endpoint}/cosmos/distribution/v1beta1/delegators/${validator.delegatorAddress}/rewards/${validator.validatorAddress}`
-        );
-
-        const rewards = await returnFirst(
-          rewardUrls.map(async (url) => {
-            const response = await fetchWithTimeout(url, 1000);
-            return response.json();
-          })
-        );
-
+        const path = `/cosmos/distribution/v1beta1/delegators/${validator.delegatorAddress}/rewards/${validator.validatorAddress}`;
+        const rewards = await queryLcd(lcdEndpoints, path);
         const rewardAmount = calculateRewardAmount(rewards, denom);
 
         return {

@@ -256,4 +256,54 @@ describe("utils", () => {
       expect(result).toBe(null);
     });
   });
+
+  describe("queryLcd", () => {
+    const { queryLcd } = require("./utils");
+    const lcdEndpoints = ["https://api1.example.com", "https://api2.example.com"];
+    const pathSuffix = "/test/path";
+
+    test("should query all endpoints and return first success", async () => {
+      const mockResponse = {
+        ok: true,
+        json: () => Promise.resolve({ data: "success" }),
+      };
+      (fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network Error")) // First fails
+        .mockResolvedValueOnce(mockResponse); // Second succeeds
+
+      const result = await queryLcd(lcdEndpoints, pathSuffix);
+
+      expect(result).toEqual({ data: "success" });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenCalledWith(
+        "https://api1.example.com/test/path",
+        expect.anything()
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        "https://api2.example.com/test/path",
+        expect.anything()
+      );
+    });
+
+    test("should throw if all endpoints fail", async () => {
+      (fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
+
+      await expect(queryLcd(lcdEndpoints, pathSuffix)).rejects.toThrow(
+        "No successful results"
+      );
+    });
+
+    test("should throw if response is not ok", async () => {
+      const errorResponse = {
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ error: "Internal Server Error" }),
+      };
+      (fetch as jest.Mock).mockResolvedValue(errorResponse);
+
+      await expect(queryLcd(lcdEndpoints, pathSuffix)).rejects.toThrow(
+        "No successful results"
+      );
+    });
+  });
 });

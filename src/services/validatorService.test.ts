@@ -1,6 +1,5 @@
 import {
   filterActiveValidators,
-  findLowestStakingValidator,
   enrichValidatorsWithMetadata,
 } from "./validatorService";
 import { Validator } from "../types";
@@ -120,85 +119,6 @@ describe("validatorService", () => {
     });
   });
 
-  describe("findLowestStakingValidator", () => {
-    test("should find validator with lowest staking amount", () => {
-      const validators: Validator[] = [
-        {
-          validatorAddress:
-            "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as any,
-          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
-          stakingAmount: 3000000,
-          rewards: 0,
-        },
-        {
-          validatorAddress:
-            "cosmosvaloper1cccccccccccccccccccccccccccccccccccccc" as any,
-          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
-          stakingAmount: 1000000,
-          rewards: 0,
-        },
-        {
-          validatorAddress:
-            "cosmosvaloper1dddddddddddddddddddddddddddddddddddddd" as any,
-          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
-          stakingAmount: 2000000,
-          rewards: 0,
-        },
-      ];
-
-      const result = findLowestStakingValidator(validators);
-
-      expect(result.validatorAddress).toBe(
-        "cosmosvaloper1cccccccccccccccccccccccccccccccccccccc"
-      );
-      expect(result.stakingAmount).toBe(1000000);
-    });
-
-    test("should return single validator when array has one element", () => {
-      const validators: Validator[] = [
-        {
-          validatorAddress:
-            "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as any,
-          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
-          stakingAmount: 1000000,
-          rewards: 0,
-        },
-      ];
-
-      const result = findLowestStakingValidator(validators);
-
-      expect(result).toEqual(validators[0]);
-    });
-
-    test("should throw error for empty array", () => {
-      expect(() => findLowestStakingValidator([])).toThrow(
-        "No validators provided"
-      );
-    });
-
-    test("should handle validators with equal staking amounts", () => {
-      const validators: Validator[] = [
-        {
-          validatorAddress:
-            "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as any,
-          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
-          stakingAmount: 1000000,
-          rewards: 0,
-        },
-        {
-          validatorAddress:
-            "cosmosvaloper1cccccccccccccccccccccccccccccccccccccc" as any,
-          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
-          stakingAmount: 1000000,
-          rewards: 0,
-        },
-      ];
-
-      const result = findLowestStakingValidator(validators);
-
-      expect(result.stakingAmount).toBe(1000000);
-    });
-  });
 
   describe("enrichValidatorsWithMetadata", () => {
     const mockValidators: Validator[] = [
@@ -218,28 +138,7 @@ describe("validatorService", () => {
     });
 
     test("should enrich validators with metadata", async () => {
-      (utils.fetchWithTimeout as jest.Mock).mockResolvedValue({
-        json: () => Promise.resolve({
-          validator: {
-            operator_address:
-              "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            jailed: false,
-            status: "BOND_STATUS_BONDED",
-            tokens: "1000000",
-            delegator_shares: "1000000",
-            description: {
-              moniker: "Test Validator",
-            },
-            commission: {
-              commission_rates: {
-                rate: "0.05",
-              },
-            },
-          },
-        }),
-      });
-
-      (utils.returnFirst as jest.Mock).mockResolvedValue({
+      (utils.queryLcd as jest.Mock).mockResolvedValue({
         validator: {
           operator_address:
             "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -267,10 +166,14 @@ describe("validatorService", () => {
       expect(result[0]!.jailed).toBe(false);
       expect(result[0]!.status).toBe("BOND_STATUS_BONDED");
       expect(result[0]!.commission).toBe(0.05);
+      expect(utils.queryLcd).toHaveBeenCalledWith(
+        lcdEndpoints,
+        expect.stringContaining("/validators/")
+      );
     });
 
     test("should handle fetch errors gracefully", async () => {
-      (utils.returnFirst as jest.Mock).mockRejectedValue(
+      (utils.queryLcd as jest.Mock).mockRejectedValue(
         new Error("Network error")
       );
 

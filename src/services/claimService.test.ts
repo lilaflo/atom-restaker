@@ -176,11 +176,8 @@ describe("claimService", () => {
 
       mockClient.withdrawRewards.mockResolvedValue({});
 
-      const promise = claimRewards(mockClient, validators, 1000);
-
-      // Fast-forward timers
-      jest.runAllTimers();
-      await promise;
+      // Use 0 delay to ensure tests run fast and don't timeout waiting for sequential delays
+      await claimRewards(mockClient, validators, 0);
 
       expect(mockClient.withdrawRewards).toHaveBeenCalledTimes(2);
     });
@@ -199,9 +196,8 @@ describe("claimService", () => {
 
       mockClient.withdrawRewards.mockResolvedValue({});
 
-      const promise = claimRewards(mockClient, validators, 2000);
-      jest.runAllTimers();
-      await promise;
+      // Use 0 delay to ensure test speed
+      await claimRewards(mockClient, validators, 0);
 
       expect(mockClient.withdrawRewards).toHaveBeenCalledTimes(1);
     });

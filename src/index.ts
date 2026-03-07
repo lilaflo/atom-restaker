@@ -10,15 +10,15 @@ import { formatNumber } from "./utils/formatting";
 import { createWallet, getAccounts, connectWithSigner } from "./services/walletService";
 import { getAllDelegations } from "./services/delegationService";
 import { enrichValidatorsWithRewards } from "./services/rewardsService";
-import { enrichValidatorsWithMetadata, filterActiveValidators, findLowestStakingValidator } from "./services/validatorService";
+import { enrichValidatorsWithMetadata, filterActiveValidators } from "./services/validatorService";
 import { filterValidatorsWithRewards, calculateTotalRewards, claimRewards } from "./services/claimService";
-import { getTotalAvailableBalance, shouldRestake, calculateStakingAmount } from "./services/balanceService";
+import { getBalance, shouldRestake, calculateStakingAmount } from "./services/balanceService";
 
 const validatedConfig = RestakeConfigSchema.parse(Config);
 
 /**
  * 1. Claim rewards from delegators with rewards >= MIN_REWARD_AMOUNT
- * 2. If total balance - RESERVE > MIN_RESTAKE_AMOUNT, restake to validator with lowest staking amount
+ * 2. If total balance - RESERVE > MIN_RESTAKE_AMOUNT, restake equally to all active validators
  */
 export async function executeRestake() {
   let client: SigningStargateClient | undefined;
@@ -78,9 +78,6 @@ export async function executeRestake() {
       `Found ${activeValidators.length} active validator(s) out of ${validators.length} total delegations`
     );
 
-    // Get the active validator with the lowest staking amount
-    const lowestStakingValidator = findLowestStakingValidator(activeValidators);
-
     // Filter validators with claimable rewards
     const rewardsToClaim = filterValidatorsWithRewards(
       validators,
@@ -101,65 +98,104 @@ export async function executeRestake() {
     // Claim rewards
     await claimRewards(client, rewardsToClaim, 1000);
 
-    // Get total available balance
-    const totalAvailable = await getTotalAvailableBalance(
-      client,
-      accounts,
-      validatedConfig.DENOM
-    );
+    // Process restaking for each account independently
+    let totalRestaked = 0;
+    const restakedValidators: string[] = [];
+    let totalAvailableBalance = 0;
 
-    await sendMessage(
-      `Total available: ${formatNumber(totalAvailable)} ${
-        validatedConfig.DENOM
-      }. Reserve: ${formatNumber(validatedConfig.RESERVE)} ${
-        validatedConfig.DENOM
-      }`
-    );
+    // Group active validators by delegator address to ensure we only restake available funds
+    const delegators = [...new Set(activeValidators.map(v => v.delegatorAddress))];
 
-    // Check if restaking is needed
-    if (
-      !shouldRestake(
-        totalAvailable,
-        validatedConfig.MIN_RESTAKE_AMOUNT,
-        validatedConfig.RESERVE
-      )
-    ) {
-      const thresholdToStake =
-        validatedConfig.MIN_RESTAKE_AMOUNT + validatedConfig.RESERVE;
-      throw new Error(
-        `No restaking needed, total available is less than ${formatNumber(
-          thresholdToStake
-        )} ${validatedConfig.DENOM}`
+    for (const delegatorAddress of delegators) {
+      const delegatorValidators = activeValidators.filter(v => v.delegatorAddress === delegatorAddress);
+      
+      if (delegatorValidators.length === 0) continue;
+
+      // Get available balance for this specific delegator
+      const availableBalance = await getBalance(
+        client,
+        delegatorAddress,
+        validatedConfig.DENOM
       );
+      
+      totalAvailableBalance += availableBalance;
+
+      // Check if restaking is needed for this delegator
+      if (
+        !shouldRestake(
+          availableBalance,
+          validatedConfig.MIN_RESTAKE_AMOUNT,
+          validatedConfig.RESERVE
+        )
+      ) {
+        continue;
+      }
+
+      const amountToStake = calculateStakingAmount(
+        availableBalance,
+        validatedConfig.RESERVE
+      );
+
+      // Check if amount to stake is positive (redundant with shouldRestake but good for safety)
+      if (amountToStake <= 0) continue;
+
+      const validatorCount = delegatorValidators.length;
+      const amountPerValidator = Math.floor(amountToStake / validatorCount);
+
+      if (amountPerValidator <= 0) {
+        await sendMessage(
+            `Amount to stake per validator (${amountPerValidator}) is too small for ${validatorCount} validators. Total available to stake: ${amountToStake}`,
+            "info"
+        );
+        continue;
+      }
+
+      await sendMessage(
+        `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} from ${delegatorAddress} to ${validatorCount} validators (${formatNumber(amountPerValidator)} each)`,
+        "success"
+      );
+
+      // Create delegation messages for all validators
+      const msgs = delegatorValidators.map(v => ({
+        typeUrl: "/cosmos.staking.v1beta1.MsgDelegate",
+        value: {
+          delegatorAddress: v.delegatorAddress,
+          validatorAddress: v.validatorAddress,
+          amount: {
+            denom: validatedConfig.DENOM,
+            amount: amountPerValidator.toString(),
+          },
+        },
+      }));
+
+      // Broadcast all delegations in a single transaction
+      const delegateTx: DeliverTxResponse = await client.signAndBroadcast(
+        delegatorAddress,
+        msgs,
+        "auto"
+      );
+
+      assertIsDeliverTxSuccess(delegateTx);
+      
+      const totalStakedThisRound = amountPerValidator * validatorCount;
+      totalRestaked += totalStakedThisRound;
+      restakedValidators.push(...delegatorValidators.map(v => v.validatorAddress));
     }
 
-    const amountToStake = calculateStakingAmount(
-      totalAvailable,
-      validatedConfig.RESERVE
-    );
-
-    await sendMessage(
-      `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} to ${
-        lowestStakingValidator.validatorAddress
-      }`,
-      "success"
-    );
-
-    const delegateTx: DeliverTxResponse = await client.delegateTokens(
-      lowestStakingValidator.delegatorAddress,
-      lowestStakingValidator.validatorAddress,
-      { amount: amountToStake.toString(), denom: validatedConfig.DENOM },
-      "auto"
-    );
-
-    assertIsDeliverTxSuccess(delegateTx);
+    if (totalRestaked === 0) {
+       const thresholdToStake = validatedConfig.MIN_RESTAKE_AMOUNT + validatedConfig.RESERVE;
+       await sendMessage(
+        `No restaking performed. Total available across ${delegators.length} account(s): ${formatNumber(totalAvailableBalance)} ${validatedConfig.DENOM}. Threshold per account: ${formatNumber(thresholdToStake)}`,
+        "info"
+       );
+    }
 
     return {
       success: true,
       rewardsClaimed: rewardSum,
-      amountRestaked: amountToStake,
-      validator: lowestStakingValidator.validatorAddress,
-      totalAvailable,
+      amountRestaked: totalRestaked,
+      validator: restakedValidators.join(", "), // Return comma-separated list if multiple
+      totalAvailable: totalAvailableBalance,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

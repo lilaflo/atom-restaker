@@ -3,12 +3,14 @@ import { RestakeConfig } from "./types";
 export const Config: RestakeConfig = {
   MNEMONIC: process.env["MNEMONIC"]!,
   DISCORD_WEBHOOK_URL: process.env["DISCORD_WEBHOOK_URL"]!,
-  LCD_ENDPOINTS: [
-    "https://api.cosmos.network",
-    "https://cosmoshub.lava.build",
-    "https://rest.cosmos.directory/cosmoshub",
-    "https://cosmos-rest.publicnode.com",
-  ],
+  LCD_ENDPOINTS: process.env["LCD_ENDPOINTS"]
+    ? process.env["LCD_ENDPOINTS"].split(",")
+    : [
+        "https://api.cosmos.network",
+        "https://cosmoshub.lava.build",
+        "https://rest.cosmos.directory/cosmoshub",
+        "https://cosmos-rest.publicnode.com",
+      ],
   RPC_URL: "https://cosmos-rpc.polkachu.com",
   REQUEST_TIMEOUT: 10_000,
   RETRY_DELAYS: [1_000, 2_000, 4_000, 8_000],

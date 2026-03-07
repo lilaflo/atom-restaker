@@ -24,6 +24,28 @@ export async function fetchWithTimeout(
   }
 }
 
+/**
+ * Helper to query multiple LCD endpoints in parallel and return the first successful JSON response
+ */
+export async function queryLcd(
+  lcdEndpoints: readonly string[],
+  pathSuffix: string
+): Promise<any> {
+  const urls = lcdEndpoints.map(
+    (endpoint) => `${endpoint}${pathSuffix}`
+  );
+
+  return returnFirst(
+    urls.map(async (url) => {
+      const response = await fetchWithTimeout(url, 1000);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+  );
+}
+
 const RETRY_DELAYS = [1000, 2000, 3000, 4000, 5000];
 export async function fetchWithRetry<T>(
   fetchFn: () => Promise<T>,

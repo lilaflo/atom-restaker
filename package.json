@@ -5,16 +5,16 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc --outDir dist",
-    "start": "node dist/server.js",
-    "start:once": "node dist/index.js",
-    "dev": "ts-node src/server.ts",
-    "dev:once": "ts-node src/index.ts",
+    "start": "dotenvx run -- node dist/server.js",
+    "start:once": "dotenvx run -- node dist/index.js",
+    "dev": "dotenvx run -- ts-node src/server.ts",
+    "dev:once": "dotenvx run -- ts-node src/index.ts",
     "type-check": "tsc --noEmit",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:performance": "jest performance.test.ts",
-    "test:validation": "jest validation.test.ts"
+    "test": "dotenvx run -- jest",
+    "test:watch": "dotenvx run -- jest --watch",
+    "test:coverage": "dotenvx run -- jest --coverage",
+    "test:performance": "dotenvx run -- jest performance.test.ts",
+    "test:validation": "dotenvx run -- jest validation.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +23,7 @@
   "dependencies": {
     "@cosmjs/proto-signing": "^0.33.1",
     "@cosmjs/stargate": "^0.33.1",
+    "@dotenvx/dotenvx": "^1.54.1",
     "@types/node-fetch": "^2.6.13",
     "fastify": "^5.6.1",
     "node-fetch": "^2.7.0",
