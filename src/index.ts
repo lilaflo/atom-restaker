@@ -10,7 +10,7 @@ import { formatNumber } from "./utils/formatting";
 import { createWallet, getAccounts, connectWithSigner } from "./services/walletService";
 import { getAllDelegations } from "./services/delegationService";
 import { enrichValidatorsWithRewards } from "./services/rewardsService";
-import { enrichValidatorsWithMetadata, filterActiveValidators } from "./services/validatorService";
+import { enrichValidatorsWithMetadata, filterActiveValidators, findLowestStakingValidator } from "./services/validatorService";
 import { filterValidatorsWithRewards, calculateTotalRewards, claimRewards } from "./services/claimService";
 import { getBalance, shouldRestake, calculateStakingAmount } from "./services/balanceService";
 
@@ -18,7 +18,7 @@ const validatedConfig = RestakeConfigSchema.parse(Config);
 
 /**
  * 1. Claim rewards from delegators with rewards >= MIN_REWARD_AMOUNT
- * 2. If total balance - RESERVE > MIN_RESTAKE_AMOUNT, restake equally to all active validators
+ * 2. If total balance - RESERVE > MIN_RESTAKE_AMOUNT, restake to the validator with the lowest stake
  */
 export async function executeRestake() {
   let client: SigningStargateClient | undefined;
@@ -139,47 +139,26 @@ export async function executeRestake() {
       // Check if amount to stake is positive (redundant with shouldRestake but good for safety)
       if (amountToStake <= 0) continue;
 
-      const validatorCount = delegatorValidators.length;
-      const amountPerValidator = Math.floor(amountToStake / validatorCount);
-
-      if (amountPerValidator <= 0) {
-        await sendMessage(
-            `Amount to stake per validator (${amountPerValidator}) is too small for ${validatorCount} validators. Total available to stake: ${amountToStake}`,
-            "info"
-        );
-        continue;
-      }
+      // Find the validator with the lowest stake among the delegator's active validators
+      const lowestStakingValidator = findLowestStakingValidator(delegatorValidators);
 
       await sendMessage(
-        `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} from ${delegatorAddress} to ${validatorCount} validators (${formatNumber(amountPerValidator)} each)`,
+        `Restaking ${formatNumber(amountToStake)} ${validatedConfig.DENOM} from ${delegatorAddress} to ${lowestStakingValidator.validatorAddress} (lowest stake)`,
         "success"
       );
 
-      // Create delegation messages for all validators
-      const msgs = delegatorValidators.map(v => ({
-        typeUrl: "/cosmos.staking.v1beta1.MsgDelegate",
-        value: {
-          delegatorAddress: v.delegatorAddress,
-          validatorAddress: v.validatorAddress,
-          amount: {
-            denom: validatedConfig.DENOM,
-            amount: amountPerValidator.toString(),
-          },
-        },
-      }));
-
-      // Broadcast all delegations in a single transaction
-      const delegateTx: DeliverTxResponse = await client.signAndBroadcast(
-        delegatorAddress,
-        msgs,
+      // Delegate to the lowest staking validator
+      const delegateTx: DeliverTxResponse = await client.delegateTokens(
+        lowestStakingValidator.delegatorAddress,
+        lowestStakingValidator.validatorAddress,
+        { amount: amountToStake.toString(), denom: validatedConfig.DENOM },
         "auto"
       );
 
       assertIsDeliverTxSuccess(delegateTx);
       
-      const totalStakedThisRound = amountPerValidator * validatorCount;
-      totalRestaked += totalStakedThisRound;
-      restakedValidators.push(...delegatorValidators.map(v => v.validatorAddress));
+      totalRestaked += amountToStake;
+      restakedValidators.push(lowestStakingValidator.validatorAddress);
     }
 
     if (totalRestaked === 0) {

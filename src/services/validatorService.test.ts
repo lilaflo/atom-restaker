@@ -1,5 +1,6 @@
 import {
   filterActiveValidators,
+  findLowestStakingValidator,
   enrichValidatorsWithMetadata,
 } from "./validatorService";
 import { Validator } from "../types";
@@ -119,6 +120,86 @@ describe("validatorService", () => {
     });
   });
 
+
+  describe("findLowestStakingValidator", () => {
+    test("should find validator with lowest staking amount", () => {
+      const validators: Validator[] = [
+        {
+          validatorAddress:
+            "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as any,
+          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
+          stakingAmount: 3000000,
+          rewards: 0,
+        },
+        {
+          validatorAddress:
+            "cosmosvaloper1cccccccccccccccccccccccccccccccccccccc" as any,
+          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
+          stakingAmount: 1000000,
+          rewards: 0,
+        },
+        {
+          validatorAddress:
+            "cosmosvaloper1dddddddddddddddddddddddddddddddddddddd" as any,
+          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
+          stakingAmount: 2000000,
+          rewards: 0,
+        },
+      ];
+
+      const result = findLowestStakingValidator(validators);
+
+      expect(result.validatorAddress).toBe(
+        "cosmosvaloper1cccccccccccccccccccccccccccccccccccccc"
+      );
+      expect(result.stakingAmount).toBe(1000000);
+    });
+
+    test("should return single validator when array has one element", () => {
+      const validators: Validator[] = [
+        {
+          validatorAddress:
+            "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as any,
+          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
+          stakingAmount: 1000000,
+          rewards: 0,
+        },
+      ];
+
+      const result = findLowestStakingValidator(validators);
+
+      expect(result).toEqual(validators[0]);
+    });
+
+    test("should throw error for empty array", () => {
+      expect(() => findLowestStakingValidator([])).toThrow(
+        "No validators provided"
+      );
+    });
+
+    test("should handle validators with equal staking amounts", () => {
+      const validators: Validator[] = [
+        {
+          validatorAddress:
+            "cosmosvaloper1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as any,
+          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
+          stakingAmount: 1000000,
+          rewards: 0,
+        },
+        {
+          validatorAddress:
+            "cosmosvaloper1cccccccccccccccccccccccccccccccccccccc" as any,
+          delegatorAddress: "cosmos1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as any,
+          stakingAmount: 1000000,
+          rewards: 0,
+        },
+      ];
+
+      const result = findLowestStakingValidator(validators);
+
+      expect(result.stakingAmount).toBe(1000000);
+    });
+  });
 
   describe("enrichValidatorsWithMetadata", () => {
     const mockValidators: Validator[] = [

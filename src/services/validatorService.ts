@@ -67,3 +67,16 @@ export function filterActiveValidators(validators: Validator[]): Validator[] {
   });
 }
 
+/**
+ * Finds the validator with the lowest staking amount
+ */
+export function findLowestStakingValidator(validators: Validator[]): Validator {
+  if (validators.length === 0) {
+    throw new Error("No validators provided");
+  }
+
+  return validators.reduce((min, v) =>
+    v.stakingAmount < min.stakingAmount ? v : min
+  );
+}
+
