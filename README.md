@@ -6,7 +6,7 @@ An automated HTTP-based restaking bot for Cosmos Hub that claims staking rewards
 
 - **HTTP-Based Execution**: Trigger restaking via HTTP requests for easy integration with external schedulers
 - **Intelligent Reward Collection**: Automatically claims rewards from validators with rewards >= 200,000 uatom
-- **Smart Re-delegation**: Re-stakes to the validator with the lowest stake amount to balance your portfolio
+- **Smart Re-delegation**: Re-stakes equally to all active validators to maintain portfolio distribution
 - **Multi-Account Support**: Supports HD wallets with multiple accounts
 - **Discord Notifications**: Real-time updates sent to Discord webhook
 - **Auto-Scaling**: Deployed on Fly.io with automatic start/stop (min 0 machines)
@@ -74,7 +74,7 @@ Triggers the restaking process and returns the result.
   "data": {
     "rewardsClaimed": 500000,
     "amountRestaked": 1200000,
-    "validator": "cosmosvaloper1...",
+    "validator": "cosmosvaloper1..., cosmosvaloper2...",
     "totalAvailable": 1500000
   }
 }
@@ -172,7 +172,7 @@ The bot races multiple LCD endpoints for fastest response:
    └─ 1 second delay between claims to avoid sequence conflicts
 8. Check total available balance
 9. If balance - RESERVE > MIN_RESTAKE_AMOUNT:
-   └─ Delegate to ACTIVE validator with LOWEST stake amount
+   └─ Delegate equal amounts to all ACTIVE validators
 10. Return structured result
 11. Disconnect client
 ```
